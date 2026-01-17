@@ -111,7 +111,7 @@ const Sidebar = () => {
         <Button className="w-full gap-2" asChild>
           <NavLink to="/create">
             <Plus className="h-4 w-4" />
-            New Project
+            New Post
           </NavLink>
         </Button>
       </div>
