@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Copy, Check, Play, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 interface CodeBlockProps {
   code: string;
@@ -34,38 +36,17 @@ const CodeBlock = ({
     }, 1000);
   };
 
-  // Simple syntax highlighting
-  const highlightCode = (code: string) => {
-    // Keywords
-    const keywords = ['def', 'return', 'if', 'else', 'for', 'while', 'import', 'from', 'class', 'in', 'and', 'or', 'not', 'True', 'False', 'None', 'const', 'let', 'var', 'function', 'async', 'await'];
-    const builtins = ['print', 'range', 'len', 'str', 'int', 'float', 'list', 'dict', 'set', 'heapq', 'console'];
-    
-    let highlighted = code
-      // Strings
-      .replace(/(["'`])(?:(?!\1)[^\\]|\\.)*\1/g, '<span class="text-green-400">$&</span>')
-      // Comments
-      .replace(/(#.*)$/gm, '<span class="text-gray-500">$1</span>')
-      .replace(/(\/\/.*)$/gm, '<span class="text-gray-500">$1</span>');
-    
-    // Keywords
-    keywords.forEach(kw => {
-      const regex = new RegExp(`\\b(${kw})\\b`, 'g');
-      highlighted = highlighted.replace(regex, '<span class="text-purple-400">$1</span>');
-    });
-    
-    // Builtins
-    builtins.forEach(fn => {
-      const regex = new RegExp(`\\b(${fn})\\b`, 'g');
-      highlighted = highlighted.replace(regex, '<span class="text-yellow-400">$1</span>');
-    });
-    
-    // Numbers
-    highlighted = highlighted.replace(/\b(\d+)\b/g, '<span class="text-orange-400">$1</span>');
-    
-    // Function names
-    highlighted = highlighted.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g, '<span class="text-blue-400">$1</span>(');
-    
-    return highlighted;
+  // Map common language aliases
+  const getLanguage = (lang: string): string => {
+    const languageMap: Record<string, string> = {
+      js: "javascript",
+      ts: "typescript",
+      py: "python",
+      rb: "ruby",
+      sh: "bash",
+      yml: "yaml",
+    };
+    return languageMap[lang.toLowerCase()] || lang.toLowerCase();
   };
 
   return (
@@ -99,22 +80,26 @@ const CodeBlock = ({
         </div>
       </div>
 
-      {/* Code */}
-      <div className="p-4 overflow-x-auto custom-scrollbar">
-        <pre className="text-sm font-mono">
-          <code
-            className="text-code-foreground"
-            dangerouslySetInnerHTML={{
-              __html: code
-                .split("\n")
-                .map(
-                  (line, i) =>
-                    `<div class="flex"><span class="w-8 text-gray-600 select-none">${i + 1}</span><span>${highlightCode(line)}</span></div>`
-                )
-                .join(""),
-            }}
-          />
-        </pre>
+      {/* Code - Using react-syntax-highlighter for safe rendering */}
+      <div className="overflow-x-auto custom-scrollbar">
+        <SyntaxHighlighter
+          language={getLanguage(language)}
+          style={oneDark}
+          showLineNumbers
+          customStyle={{
+            margin: 0,
+            borderRadius: 0,
+            background: "transparent",
+          }}
+          lineNumberStyle={{
+            minWidth: "2em",
+            paddingRight: "1em",
+            color: "#6b7280",
+            userSelect: "none",
+          }}
+        >
+          {code}
+        </SyntaxHighlighter>
       </div>
 
       {/* Run button */}
