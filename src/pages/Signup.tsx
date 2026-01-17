@@ -1,23 +1,80 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, AlertCircle, GraduationCap, Award } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import Logo from "@/components/Logo";
 import { Tag } from "@/components/ui/tag";
+import { useAuth } from "@/hooks/useAuth";
+import { z } from "zod";
+import { cn } from "@/lib/utils";
+
+const signupSchema = z.object({
+  fullName: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters")
+});
 
 const Signup = () => {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [role, setRole] = useState<"student" | "mentor">("student");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { signUp, signInWithGoogle, signInWithGithub, user } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (user) {
+      navigate("/home");
+    }
+  }, [user, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/home");
+    setError(null);
+
+    // Validate input
+    const result = signupSchema.safeParse({ fullName, email, password });
+    if (!result.success) {
+      setError(result.error.errors[0].message);
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await signUp(email, password, { full_name: fullName, role });
+    setLoading(false);
+
+    if (error) {
+      if (error.message.includes("User already registered")) {
+        setError("An account with this email already exists. Please sign in instead.");
+      } else {
+        setError(error.message);
+      }
+    } else {
+      navigate("/home");
+    }
+  };
+
+  const handleGoogleSignup = async () => {
+    setError(null);
+    const { error } = await signInWithGoogle();
+    if (error) {
+      setError(error.message);
+    }
+  };
+
+  const handleGithubSignup = async () => {
+    setError(null);
+    const { error } = await signInWithGithub();
+    if (error) {
+      setError(error.message);
+    }
   };
 
   return (
@@ -107,9 +164,67 @@ const Signup = () => {
             Join the community of future engineers.
           </p>
 
+          {error && (
+            <Alert variant="destructive" className="mt-6">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Role Selection */}
+          <div className="mt-8">
+            <Label className="mb-3 block">I am a...</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setRole("student")}
+                className={cn(
+                  "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
+                  role === "student"
+                    ? "border-primary bg-primary-soft"
+                    : "border-border hover:border-primary/50"
+                )}
+              >
+                <GraduationCap className={cn(
+                  "h-8 w-8",
+                  role === "student" ? "text-primary" : "text-muted-foreground"
+                )} />
+                <span className={cn(
+                  "font-medium",
+                  role === "student" ? "text-primary" : "text-foreground"
+                )}>Student</span>
+                <span className="text-xs text-muted-foreground text-center">
+                  Learning & building projects
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole("mentor")}
+                className={cn(
+                  "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
+                  role === "mentor"
+                    ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                    : "border-border hover:border-amber-500/50"
+                )}
+              >
+                <Award className={cn(
+                  "h-8 w-8",
+                  role === "mentor" ? "text-amber-600" : "text-muted-foreground"
+                )} />
+                <span className={cn(
+                  "font-medium",
+                  role === "mentor" ? "text-amber-600" : "text-foreground"
+                )}>Mentor</span>
+                <span className="text-xs text-muted-foreground text-center">
+                  Guiding & supporting students
+                </span>
+              </button>
+            </div>
+          </div>
+
           {/* Social Buttons */}
-          <div className="mt-8 space-y-3">
-            <Button variant="outline" className="w-full gap-2 h-12">
+          <div className="mt-6 space-y-3">
+            <Button variant="outline" className="w-full gap-2 h-12" onClick={handleGoogleSignup} disabled={loading}>
               <svg className="h-5 w-5" viewBox="0 0 24 24">
                 <path
                   fill="#4285F4"
@@ -130,7 +245,7 @@ const Signup = () => {
               </svg>
               Sign up with Google
             </Button>
-            <Button variant="outline" className="w-full gap-2 h-12">
+            <Button variant="outline" className="w-full gap-2 h-12" onClick={handleGithubSignup} disabled={loading}>
               <svg className="h-5 w-5" viewBox="0 0 24 24">
                 <path
                   fill="currentColor"
@@ -163,17 +278,19 @@ const Signup = () => {
                 placeholder="Ada Lovelace"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
+                disabled={loading}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">School Email Address</Label>
+              <Label htmlFor="email">Email Address</Label>
               <Input
                 id="email"
                 type="email"
                 placeholder="student@university.edu"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
               />
             </div>
 
@@ -187,6 +304,7 @@ const Signup = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pr-10"
+                  disabled={loading}
                 />
                 <button
                   type="button"
@@ -202,8 +320,8 @@ const Signup = () => {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" size="lg">
-              Create Account
+            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+              {loading ? "Creating account..." : "Create Account"}
             </Button>
           </form>
 

@@ -1,23 +1,77 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import Logo from "@/components/Logo";
 import heroImage from "@/assets/hero-login.jpg";
 import UserAvatar from "@/components/Avatar";
+import { useAuth } from "@/hooks/useAuth";
+import { z } from "zod";
+
+const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters")
+});
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { signIn, signInWithGoogle, signInWithGithub, user } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (user) {
+      navigate("/home");
+    }
+  }, [user, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/home");
+    setError(null);
+
+    // Validate input
+    const result = loginSchema.safeParse({ email, password });
+    if (!result.success) {
+      setError(result.error.errors[0].message);
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await signIn(email, password);
+    setLoading(false);
+
+    if (error) {
+      if (error.message.includes("Invalid login credentials")) {
+        setError("Invalid email or password. Please try again.");
+      } else {
+        setError(error.message);
+      }
+    } else {
+      navigate("/home");
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError(null);
+    const { error } = await signInWithGoogle();
+    if (error) {
+      setError(error.message);
+    }
+  };
+
+  const handleGithubLogin = async () => {
+    setError(null);
+    const { error } = await signInWithGithub();
+    if (error) {
+      setError(error.message);
+    }
   };
 
   return (
@@ -83,6 +137,13 @@ const Login = () => {
           <h2 className="text-3xl font-bold text-foreground">Welcome to Career</h2>
           <p className="text-muted-foreground mt-2">Please enter your details to sign in.</p>
 
+          {error && (
+            <Alert variant="destructive" className="mt-6">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
@@ -94,6 +155,7 @@ const Login = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pr-10"
+                  disabled={loading}
                 />
                 <Mail className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               </div>
@@ -117,6 +179,7 @@ const Login = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pr-10"
+                  disabled={loading}
                 />
                 <button
                   type="button"
@@ -132,8 +195,8 @@ const Login = () => {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" size="lg">
-              Log In
+            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+              {loading ? "Signing in..." : "Log In"}
             </Button>
           </form>
 
@@ -150,7 +213,7 @@ const Login = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-4 mt-6">
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2" onClick={handleGithubLogin} disabled={loading}>
                 <svg className="h-5 w-5" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"
@@ -159,7 +222,7 @@ const Login = () => {
                 </svg>
                 GitHub
               </Button>
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2" onClick={handleGoogleLogin} disabled={loading}>
                 <svg className="h-5 w-5" viewBox="0 0 24 24">
                   <path
                     fill="#4285F4"
