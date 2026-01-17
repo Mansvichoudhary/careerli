@@ -46,9 +46,9 @@ const Sidebar = () => {
     { to: "/home", icon: <Home className="h-5 w-5" />, label: "Home Feed" },
     { to: "/explore", icon: <Compass className="h-5 w-5" />, label: "Explore" },
     { to: "/snippets", icon: <Code2 className="h-5 w-5" />, label: "Code Snippets" },
-    { to: "/portfolio", icon: <Folder className="h-5 w-5" />, label: "My Portfolio" },
-    { to: "/saved", icon: <Bookmark className="h-5 w-5" />, label: "Saved" },
-    { to: "/collaborations", icon: <Users className="h-5 w-5" />, label: "Collaborations" },
+    { to: "/connections", icon: <Users className="h-5 w-5" />, label: "Connections" },
+    { to: "/events", icon: <Folder className="h-5 w-5" />, label: "Events" },
+    { to: "/notifications", icon: <Bookmark className="h-5 w-5" />, label: "Notifications" },
   ];
 
   const groups = [
