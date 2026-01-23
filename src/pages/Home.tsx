@@ -1,17 +1,46 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Filter, TrendingUp, Globe, Cpu, Brain, Server, UserPlus, ArrowRight } from "lucide-react";
+import { Filter, TrendingUp, Globe, Cpu, Brain, Server, UserPlus, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PostCard from "@/components/PostCard";
 import UserAvatar from "@/components/Avatar";
 import { Tag } from "@/components/ui/tag";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
+
+interface Profile {
+  id: string;
+  username: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+  role: 'student' | 'mentor';
+  university: string | null;
+  skills: string[];
+}
+
+interface Post {
+  id: string;
+  title: string | null;
+  content: string;
+  post_type: string;
+  code_content: string | null;
+  code_language: string | null;
+  tags: string[];
+  likes_count: number;
+  comments_count: number;
+  created_at: string;
+  is_anonymous: boolean;
+  user_id: string;
+  media_urls: string[];
+  profiles: Profile | null;
+}
 
 const categories = [
   { id: "all", label: "All Posts", icon: Globe },
-  { id: "webdev", label: "Web Dev", icon: Globe },
-  { id: "iot", label: "IoT & Hardware", icon: Cpu },
-  { id: "aiml", label: "AI/ML", icon: Brain },
-  { id: "devops", label: "DevOps", icon: Server },
+  { id: "code", label: "Code", icon: Cpu },
+  { id: "project", label: "Projects", icon: Brain },
+  { id: "text", label: "Discussions", icon: Server },
 ];
 
 const trendingTech = [
@@ -20,62 +49,72 @@ const trendingTech = [
   { name: "React", abbr: "Re", change: "+12%", color: "bg-cyan-500" },
 ];
 
-const studentsToFollow = [
-  { name: "Marcus L.", field: "Machine Learning" },
-  { name: "Jessica T.", field: "UX Design" },
-  { name: "Raj P.", field: "Backend Dev" },
-];
-
-const posts = [
-  {
-    author: { name: "Sarah Jenkins", field: "Electrical Engineering" },
-    timeAgo: "2h ago",
-    title: "Smart Garden Monitor MVP 🌱",
-    content:
-      "Finally got the moisture sensor calibrated correctly on the ESP32! The data is now streaming to my local dashboard via MQTT. Next step: building the solar charging circuit. Any tips on battery management for low-power IoT?",
-    tags: ["IoT", "C++", "Arduino"],
-    likes: 24,
-    comments: 8,
-    image: "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&auto=format&fit=crop&q=60",
-  },
-  {
-    author: { name: "David Park", field: "Computer Science" },
-    timeAgo: "4h ago",
-    title: "Need help optimizing this sorting algo 🤔",
-    content:
-      "I'm trying to implement a custom quicksort for my algorithms class, but it's hitting O(n^2) on already sorted arrays. I think my pivot selection is off. Can anyone take a look?",
-    tags: ["Python", "Algorithms", "HelpWanted"],
-    likes: 12,
-    comments: 15,
-    isCodePost: true,
-    code: {
-      content: `def partition(arr, low, high):
-    pivot = arr[high]  # Is this the issue?
-    i = low - 1
-    for j in range(low, high):
-        if arr[j] <= pivot:
-            i += 1
-            arr[i], arr[j] = arr[j], arr[i]
-    arr[i+1], arr[high] = arr[high], arr[i+1]
-    return i + 1`,
-      language: "python",
-      filename: "quicksort.py",
-    },
-  },
-  {
-    author: { name: "Emma Chen", field: "Software Engineering" },
-    timeAgo: "6h ago",
-    title: "Just deployed my first full-stack app! 🚀",
-    content:
-      "After 3 months of learning React and Node.js, I finally deployed my task management app. It's not perfect, but it works! Would love feedback on the code structure.",
-    tags: ["React", "Node.js", "Deployment"],
-    likes: 45,
-    comments: 22,
-  },
-];
-
 const Home = () => {
   const [activeCategory, setActiveCategory] = useState("all");
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [suggestedUsers, setSuggestedUsers] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchPosts();
+    fetchSuggestedUsers();
+  }, [activeCategory]);
+
+  const fetchPosts = async () => {
+    setLoading(true);
+    let query = supabase
+      .from('posts')
+      .select(`
+        *,
+        profiles!posts_user_id_fkey (
+          id, username, full_name, avatar_url, role, university, skills
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (activeCategory !== 'all') {
+      query = query.eq('post_type', activeCategory);
+    }
+
+    const { data, error } = await query;
+    if (!error && data) {
+      setPosts(data as unknown as Post[]);
+    }
+    setLoading(false);
+  };
+
+  const fetchSuggestedUsers = async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .limit(3);
+    
+    if (data) {
+      setSuggestedUsers(data as Profile[]);
+    }
+  };
+
+  const getTimeAgo = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
+  const handleFollow = async (userId: string) => {
+    if (!user) return;
+    
+    await supabase
+      .from('user_connections')
+      .insert({ follower_id: user.id, following_id: userId });
+  };
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -118,25 +157,58 @@ const Home = () => {
           </div>
 
           {/* Posts */}
-          <div className="space-y-6">
-            {posts.map((post, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <PostCard {...post} />
-              </motion.div>
-            ))}
-          </div>
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : posts.length === 0 ? (
+            <div className="text-center py-12 bg-card rounded-xl border border-border">
+              <p className="text-muted-foreground mb-4">No posts yet. Be the first to share something!</p>
+              <Button onClick={() => navigate('/create')}>Create Post</Button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {posts.map((post, index) => (
+                <motion.div
+                  key={post.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <PostCard
+                    id={post.id}
+                    author={{
+                      name: post.is_anonymous ? "Anonymous" : (post.profiles?.full_name || "Unknown User"),
+                      avatar: post.profiles?.avatar_url || undefined,
+                      field: post.profiles?.university || "Student",
+                    }}
+                    timeAgo={getTimeAgo(post.created_at)}
+                    title={post.title || ""}
+                    content={post.content}
+                    tags={post.tags}
+                    image={post.media_urls?.[0]}
+                    likes={post.likes_count}
+                    comments={post.comments_count}
+                    isCodePost={post.post_type === 'code'}
+                    code={post.code_content ? {
+                      content: post.code_content,
+                      language: post.code_language || 'javascript',
+                      filename: `snippet.${post.code_language || 'js'}`
+                    } : undefined}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          )}
 
           {/* Load More */}
-          <div className="flex justify-center mt-8">
-            <Button variant="outline" className="gap-2">
-              Load More
-            </Button>
-          </div>
+          {posts.length > 0 && (
+            <div className="flex justify-center mt-8">
+              <Button variant="outline" className="gap-2">
+                Load More
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Right Sidebar */}
@@ -174,32 +246,45 @@ const Home = () => {
           {/* Students to Follow */}
           <div className="bg-card rounded-xl border border-border p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-foreground">Students to Follow</h3>
+              <h3 className="font-semibold text-foreground">People to Follow</h3>
             </div>
             <div className="space-y-4">
-              {studentsToFollow.map((student) => (
+              {suggestedUsers.map((profile) => (
                 <div
-                  key={student.name}
+                  key={profile.id}
                   className="flex items-center justify-between"
                 >
                   <div className="flex items-center gap-3">
-                    <UserAvatar name={student.name} size="sm" />
+                    <UserAvatar 
+                      name={profile.full_name || "User"} 
+                      src={profile.avatar_url || undefined}
+                      size="sm" 
+                    />
                     <div>
                       <p className="font-medium text-sm text-foreground">
-                        {student.name}
+                        {profile.full_name || "User"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {student.field}
+                        {profile.university || profile.role}
                       </p>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8"
+                    onClick={() => handleFollow(profile.id)}
+                  >
                     <UserPlus className="h-4 w-4 text-primary" />
                   </Button>
                 </div>
               ))}
             </div>
-            <Button variant="link" className="text-primary p-0 h-auto text-sm mt-3">
+            <Button 
+              variant="link" 
+              className="text-primary p-0 h-auto text-sm mt-3"
+              onClick={() => navigate('/connections')}
+            >
               See More Suggestions
             </Button>
           </div>
@@ -216,6 +301,7 @@ const Home = () => {
             <Button
               variant="secondary"
               className="bg-white text-primary hover:bg-white/90 gap-2"
+              onClick={() => navigate('/events')}
             >
               Register Now
               <ArrowRight className="h-4 w-4" />
