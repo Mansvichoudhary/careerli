@@ -6,14 +6,14 @@ import {
   Italic,
   Link as LinkIcon,
   List,
-  X,
   Send,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Tag } from "@/components/ui/tag";
 import Logo from "@/components/Logo";
@@ -25,24 +25,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const languages = ["Python", "JavaScript", "TypeScript", "Rust", "Go", "Java", "C++"];
 
 const CreatePost = () => {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
+  const { toast } = useToast();
+  
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [code, setCode] = useState(`def recursive_factorial(n):
-    if n == 1:
-        return 1
-    else:
-        return n * recursive_factorial(n-1)
-
-# TODO: Optimize tail recursion?`);
+  const [code, setCode] = useState("");
   const [language, setLanguage] = useState("Python");
-  const [tags, setTags] = useState<string[]>(["Python", "Algorithms"]);
+  const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [anonymous, setAnonymous] = useState(false);
+  const [postType, setPostType] = useState("text");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && tagInput.trim() && tags.length < 5) {
@@ -58,6 +60,62 @@ const CreatePost = () => {
     setTags(tags.filter((t) => t !== tagToRemove));
   };
 
+  const handlePublish = async () => {
+    if (!user) {
+      toast({ title: 'Please log in', description: 'You must be logged in to create a post', variant: 'destructive' });
+      return;
+    }
+
+    if (!title.trim() || !description.trim()) {
+      toast({ title: 'Missing fields', description: 'Please fill in the title and description', variant: 'destructive' });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .insert({
+          title: title.trim(),
+          content: description.trim(),
+          post_type: postType,
+          code_content: code.trim() || null,
+          code_language: code.trim() ? language.toLowerCase() : null,
+          tags: tags,
+          is_anonymous: anonymous,
+          user_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({ title: 'Post published!', description: 'Your post has been created successfully.' });
+      navigate('/home');
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveDraft = () => {
+    // Save to localStorage as draft
+    const draft = {
+      title,
+      description,
+      code,
+      language,
+      tags,
+      anonymous,
+      postType,
+      savedAt: new Date().toISOString(),
+    };
+    localStorage.setItem('post_draft', JSON.stringify(draft));
+    toast({ title: 'Draft saved!', description: 'Your draft has been saved locally.' });
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Top Bar */}
@@ -71,7 +129,11 @@ const CreatePost = () => {
           >
             Cancel
           </Button>
-          <UserAvatar name="Alex Chen" size="md" />
+          <UserAvatar 
+            name={profile?.full_name || "User"} 
+            src={profile?.avatar_url || undefined}
+            size="md" 
+          />
         </div>
       </header>
 
@@ -90,11 +152,11 @@ const CreatePost = () => {
           </p>
 
           {/* Post Type Tabs */}
-          <Tabs defaultValue="question" className="mb-6">
+          <Tabs value={postType} onValueChange={setPostType} className="mb-6">
             <TabsList>
-              <TabsTrigger value="question">Question</TabsTrigger>
-              <TabsTrigger value="showcase">Project Showcase</TabsTrigger>
-              <TabsTrigger value="discussion">General Discussion</TabsTrigger>
+              <TabsTrigger value="text">Question</TabsTrigger>
+              <TabsTrigger value="project">Project Showcase</TabsTrigger>
+              <TabsTrigger value="code">Code Snippet</TabsTrigger>
             </TabsList>
           </Tabs>
 
@@ -165,7 +227,7 @@ const CreatePost = () => {
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-2">
                   <span className="text-muted-foreground">&lt;/&gt;</span>
-                  Code Snippet
+                  Code Snippet (optional)
                 </Label>
                 <Select value={language} onValueChange={setLanguage}>
                   <SelectTrigger className="w-32">
@@ -188,12 +250,13 @@ const CreatePost = () => {
                     <div className="w-3 h-3 rounded-full bg-yellow-500" />
                     <div className="w-3 h-3 rounded-full bg-green-500" />
                   </div>
-                  <span className="text-sm text-gray-400 ml-2">main.py</span>
+                  <span className="text-sm text-gray-400 ml-2">code.{language.toLowerCase()}</span>
                 </div>
                 {/* Code Editor */}
                 <textarea
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
+                  placeholder="Paste your code here..."
                   className="w-full min-h-[200px] p-4 bg-code text-code-foreground font-mono text-sm resize-none focus:outline-none"
                   spellCheck={false}
                 />
@@ -219,10 +282,19 @@ const CreatePost = () => {
               </div>
             </div>
             <div className="flex gap-3">
-              <Button variant="outline">Save Draft</Button>
-              <Button className="gap-2">
-                Publish Post
-                <Send className="h-4 w-4" />
+              <Button variant="outline" onClick={handleSaveDraft}>Save Draft</Button>
+              <Button className="gap-2" onClick={handlePublish} disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Publishing...
+                  </>
+                ) : (
+                  <>
+                    Publish Post
+                    <Send className="h-4 w-4" />
+                  </>
+                )}
               </Button>
             </div>
           </div>

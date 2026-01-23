@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
   Compass,
@@ -10,11 +10,13 @@ import {
   User,
   Settings,
   Code2,
+  LogOut,
 } from "lucide-react";
 import Logo from "@/components/Logo";
 import UserAvatar from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 
 interface NavItemProps {
   to: string;
@@ -40,7 +42,14 @@ const NavItem = ({ to, icon, label, isActive }: NavItemProps) => (
 
 const Sidebar = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const currentPath = location.pathname;
+  const { profile, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/login");
+  };
 
   const mainNav = [
     { to: "/home", icon: <Home className="h-5 w-5" />, label: "Home Feed" },
@@ -66,13 +75,18 @@ const Sidebar = () => {
       {/* User Profile */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
-          <UserAvatar name="Alex Chen" showOnline size="md" />
+          <UserAvatar 
+            name={profile?.full_name || "User"} 
+            src={profile?.avatar_url || undefined}
+            showOnline 
+            size="md" 
+          />
           <div className="flex-1 min-w-0">
             <h4 className="font-semibold text-sm text-sidebar-foreground truncate">
-              Alex Chen
+              {profile?.full_name || "User"}
             </h4>
             <p className="text-xs text-muted-foreground truncate">
-              Comp Sci. Student
+              {profile?.role === 'mentor' ? 'Mentor' : 'Student'}
             </p>
           </div>
         </div>
@@ -136,6 +150,13 @@ const Sidebar = () => {
           label="Settings"
           isActive={currentPath === "/settings"}
         />
+        <button
+          onClick={handleSignOut}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-destructive hover:bg-destructive/10 w-full"
+        >
+          <LogOut className="h-5 w-5" />
+          <span>Sign Out</span>
+        </button>
       </div>
     </aside>
   );
