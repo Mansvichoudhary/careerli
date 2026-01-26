@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Filter, TrendingUp, Globe, Cpu, Brain, Server, UserPlus, ArrowRight, Loader2 } from "lucide-react";
+import { Filter, TrendingUp, Globe, Cpu, Brain, Server, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PostCard from "@/components/PostCard";
 import UserAvatar from "@/components/Avatar";
 import { Tag } from "@/components/ui/tag";
+import RoleBadge from "@/components/RoleBadge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
+import { demoPosts, demoUsers, demoEvents, trendingTech } from "@/lib/seedData";
 
 interface Profile {
   id: string;
@@ -43,16 +45,11 @@ const categories = [
   { id: "text", label: "Discussions", icon: Server },
 ];
 
-const trendingTech = [
-  { name: "Python", abbr: "Py", change: "+24%", color: "bg-blue-500" },
-  { name: "Rust", abbr: "Rs", change: "+18%", color: "bg-orange-500" },
-  { name: "React", abbr: "Re", change: "+12%", color: "bg-cyan-500" },
-];
-
 const Home = () => {
   const [activeCategory, setActiveCategory] = useState("all");
   const [posts, setPosts] = useState<Post[]>([]);
   const [suggestedUsers, setSuggestedUsers] = useState<Profile[]>([]);
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -60,7 +57,10 @@ const Home = () => {
   useEffect(() => {
     fetchPosts();
     fetchSuggestedUsers();
-  }, [activeCategory]);
+    if (user) {
+      fetchFollowing();
+    }
+  }, [activeCategory, user]);
 
   const fetchPosts = async () => {
     setLoading(true);
@@ -90,10 +90,22 @@ const Home = () => {
     const { data } = await supabase
       .from('profiles')
       .select('*')
-      .limit(3);
+      .limit(5);
+    
+    if (data && data.length > 0) {
+      setSuggestedUsers(data as Profile[]);
+    }
+  };
+
+  const fetchFollowing = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('user_connections')
+      .select('following_id')
+      .eq('follower_id', user.id);
     
     if (data) {
-      setSuggestedUsers(data as Profile[]);
+      setFollowingIds(new Set(data.map(c => c.following_id)));
     }
   };
 
@@ -109,12 +121,44 @@ const Home = () => {
   };
 
   const handleFollow = async (userId: string) => {
-    if (!user) return;
+    if (!user) {
+      navigate('/login');
+      return;
+    }
     
-    await supabase
-      .from('user_connections')
-      .insert({ follower_id: user.id, following_id: userId });
+    const isFollowing = followingIds.has(userId);
+    
+    if (isFollowing) {
+      await supabase
+        .from('user_connections')
+        .delete()
+        .eq('follower_id', user.id)
+        .eq('following_id', userId);
+      
+      setFollowingIds(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    } else {
+      await supabase
+        .from('user_connections')
+        .insert({ follower_id: user.id, following_id: userId });
+      
+      setFollowingIds(prev => new Set(prev).add(userId));
+    }
   };
+
+  // Combine real posts with demo posts if no real posts exist
+  const displayPosts = posts.length > 0 ? posts : [];
+  const displayUsers = suggestedUsers.length > 0 ? suggestedUsers : demoUsers.slice(0, 5) as unknown as Profile[];
+
+  // Filter demo posts by category
+  const filteredDemoPosts = activeCategory === 'all' 
+    ? demoPosts 
+    : demoPosts.filter(p => p.post_type === activeCategory);
+
+  const upcomingEvent = demoEvents[0];
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -161,14 +205,15 @@ const Home = () => {
             <div className="flex justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : posts.length === 0 ? (
+          ) : displayPosts.length === 0 && filteredDemoPosts.length === 0 ? (
             <div className="text-center py-12 bg-card rounded-xl border border-border">
               <p className="text-muted-foreground mb-4">No posts yet. Be the first to share something!</p>
               <Button onClick={() => navigate('/create')}>Create Post</Button>
             </div>
           ) : (
             <div className="space-y-6">
-              {posts.map((post, index) => (
+              {/* Real posts first */}
+              {displayPosts.map((post, index) => (
                 <motion.div
                   key={post.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -198,11 +243,41 @@ const Home = () => {
                   />
                 </motion.div>
               ))}
+              
+              {/* Demo posts if no real posts */}
+              {displayPosts.length === 0 && filteredDemoPosts.map((post, index) => (
+                <motion.div
+                  key={post.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <PostCard
+                    author={{
+                      name: post.author.full_name,
+                      avatar: post.author.avatar_url || undefined,
+                      field: post.author.university || "Student",
+                    }}
+                    timeAgo={getTimeAgo(post.created_at)}
+                    title={post.title}
+                    content={post.content}
+                    tags={post.tags}
+                    likes={post.likes_count}
+                    comments={post.comments_count}
+                    isCodePost={post.post_type === 'code'}
+                    code={post.code_content ? {
+                      content: post.code_content,
+                      language: post.code_language || 'python',
+                      filename: `snippet.${post.code_language || 'py'}`
+                    } : undefined}
+                  />
+                </motion.div>
+              ))}
             </div>
           )}
 
           {/* Load More */}
-          {posts.length > 0 && (
+          {(displayPosts.length > 0 || filteredDemoPosts.length > 0) && (
             <div className="flex justify-center mt-8">
               <Button variant="outline" className="gap-2">
                 Load More
@@ -213,72 +288,90 @@ const Home = () => {
 
         {/* Right Sidebar */}
         <aside className="w-80 hidden xl:block space-y-6">
-          {/* Trending Tech */}
+          {/* Trending Tech - Enhanced */}
           <div className="bg-card rounded-xl border border-border p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-foreground">Trending Tech</h3>
-              <Button variant="link" className="text-primary p-0 h-auto text-sm">
-                View all
+              <Button variant="link" className="text-primary p-0 h-auto text-sm" asChild>
+                <Link to="/explore">View all</Link>
               </Button>
             </div>
             <div className="space-y-3">
-              {trendingTech.map((tech) => (
+              {trendingTech.slice(0, 4).map((tech) => (
                 <div
                   key={tech.name}
-                  className="flex items-center justify-between"
+                  className="p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => navigate(`/explore?tag=${tech.name}`)}
                 >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-lg ${tech.color} flex items-center justify-center text-white text-xs font-bold`}
-                    >
-                      {tech.abbr}
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-8 h-8 rounded-lg ${tech.color} flex items-center justify-center text-white text-xs font-bold`}
+                      >
+                        {tech.abbr}
+                      </div>
+                      <span className="font-medium text-foreground">{tech.name}</span>
                     </div>
-                    <span className="font-medium text-foreground">{tech.name}</span>
+                    <span className="text-sm text-success font-medium">
+                      {tech.change}
+                    </span>
                   </div>
-                  <span className="text-sm text-success font-medium">
-                    {tech.change}
-                  </span>
+                  <p className="text-xs text-muted-foreground ml-11">{tech.reason}</p>
+                  <p className="text-xs text-muted-foreground ml-11">{tech.postCount} posts</p>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Students to Follow */}
+          {/* People to Follow - Enhanced */}
           <div className="bg-card rounded-xl border border-border p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-foreground">People to Follow</h3>
             </div>
             <div className="space-y-4">
-              {suggestedUsers.map((profile) => (
-                <div
-                  key={profile.id}
-                  className="flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <UserAvatar 
-                      name={profile.full_name || "User"} 
-                      src={profile.avatar_url || undefined}
-                      size="sm" 
-                    />
-                    <div>
-                      <p className="font-medium text-sm text-foreground">
-                        {profile.full_name || "User"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
+              {displayUsers.map((profile) => {
+                const isFollowing = followingIds.has(profile.id);
+                return (
+                  <div
+                    key={profile.id}
+                    className="flex items-start gap-3"
+                  >
+                    <Link to={`/profile/${profile.id}`}>
+                      <UserAvatar 
+                        name={profile.full_name || "User"} 
+                        src={profile.avatar_url || undefined}
+                        size="sm" 
+                      />
+                    </Link>
+                    <div className="flex-1 min-w-0">
+                      <Link to={`/profile/${profile.id}`} className="block hover:underline">
+                        <p className="font-medium text-sm text-foreground truncate">
+                          {profile.full_name || "User"}
+                        </p>
+                      </Link>
+                      <p className="text-xs text-muted-foreground truncate">
                         {profile.university || profile.role}
                       </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <RoleBadge role={profile.role} size="sm" />
+                        {profile.skills?.slice(0, 2).map(skill => (
+                          <Tag key={skill} variant="default" className="text-xs py-0 px-1.5">
+                            {skill}
+                          </Tag>
+                        ))}
+                      </div>
                     </div>
+                    <Button 
+                      variant={isFollowing ? "outline" : "default"} 
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => handleFollow(profile.id)}
+                    >
+                      {isFollowing ? "Following" : "Follow"}
+                    </Button>
                   </div>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="h-8 w-8"
-                    onClick={() => handleFollow(profile.id)}
-                  >
-                    <UserPlus className="h-4 w-4 text-primary" />
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <Button 
               variant="link" 
@@ -289,24 +382,29 @@ const Home = () => {
             </Button>
           </div>
 
-          {/* Event Banner */}
-          <div className="bg-gradient-to-br from-primary to-indigo-600 rounded-xl p-5 text-white">
-            <Tag className="bg-white/20 text-white border-0 mb-3">
-              UPCOMING EVENT
-            </Tag>
-            <h3 className="text-lg font-bold mb-2">Campus Hackathon 2024</h3>
-            <p className="text-sm text-white/80 mb-4">
-              Join 500+ students building the future. Register by Friday!
-            </p>
-            <Button
-              variant="secondary"
-              className="bg-white text-primary hover:bg-white/90 gap-2"
-              onClick={() => navigate('/events')}
-            >
-              Register Now
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
+          {/* Event Banner - Enhanced */}
+          <Link to="/events" className="block">
+            <div className="bg-gradient-to-br from-primary to-indigo-600 rounded-xl p-5 text-white hover:opacity-95 transition-opacity">
+              <Tag className="bg-white/20 text-white border-0 mb-3">
+                UPCOMING EVENT
+              </Tag>
+              <h3 className="text-lg font-bold mb-2">{upcomingEvent.title}</h3>
+              <p className="text-sm text-white/80 mb-2">
+                {upcomingEvent.description?.substring(0, 80)}...
+              </p>
+              <div className="flex items-center gap-4 text-sm text-white/70 mb-4">
+                <span>{upcomingEvent.is_online ? '🌐 Online' : `📍 ${upcomingEvent.location}`}</span>
+                <span>👥 {upcomingEvent.participant_count} registered</span>
+              </div>
+              <Button
+                variant="secondary"
+                className="bg-white text-primary hover:bg-white/90 gap-2"
+              >
+                Register Now
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </Link>
         </aside>
       </div>
     </div>

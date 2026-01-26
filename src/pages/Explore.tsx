@@ -1,13 +1,16 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Search, Filter, TrendingUp, Globe, Cpu, Brain, Server, Users, Code2, Sparkles } from "lucide-react";
+import { Search, Filter, TrendingUp, Globe, Cpu, Brain, Server, Users, Code2, Sparkles, Award, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PostCard from "@/components/PostCard";
 import UserAvatar from "@/components/Avatar";
 import RoleBadge from "@/components/RoleBadge";
+import { Tag } from "@/components/ui/tag";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { demoPosts, demoUsers, trendingTech } from "@/lib/seedData";
 
 interface Profile {
   id: string;
@@ -17,6 +20,7 @@ interface Profile {
   role: 'student' | 'mentor';
   university: string | null;
   skills: string[];
+  bio: string | null;
 }
 
 interface Post {
@@ -43,18 +47,27 @@ const categories = [
 ];
 
 const Explore = () => {
+  const [searchParams] = useSearchParams();
+  const initialTag = searchParams.get('tag') || '';
+  
   const [activeCategory, setActiveCategory] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(initialTag);
   const [posts, setPosts] = useState<Post[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
+  const [mentors, setMentors] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState<"all" | "student" | "mentor">("all");
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchPosts();
     fetchUsers();
-  }, [activeCategory, roleFilter]);
+    if (user) {
+      fetchFollowing();
+    }
+  }, [activeCategory, roleFilter, user]);
 
   const fetchPosts = async () => {
     setLoading(true);
@@ -63,10 +76,10 @@ const Explore = () => {
       .select(`
         *,
         profiles!posts_user_id_fkey (
-          id, username, full_name, avatar_url, role, university, skills
+          id, username, full_name, avatar_url, role, university, skills, bio
         )
       `)
-      .order('created_at', { ascending: false })
+      .order('likes_count', { ascending: false })
       .limit(20);
 
     if (activeCategory !== "all") {
@@ -90,29 +103,92 @@ const Explore = () => {
   };
 
   const fetchUsers = async () => {
-    let query = supabase
+    // Fetch all users
+    const { data } = await supabase
       .from('profiles')
       .select('*')
-      .limit(5);
+      .limit(10);
     
-    if (roleFilter !== "all") {
-      query = query.eq('role', roleFilter);
-    }
-
-    const { data, error } = await query;
-    if (!error && data) {
+    if (data && data.length > 0) {
       setUsers(data as Profile[]);
+      setMentors(data.filter(u => u.role === 'mentor') as Profile[]);
+    } else {
+      // Use demo users
+      setUsers(demoUsers as unknown as Profile[]);
+      setMentors(demoUsers.filter(u => u.role === 'mentor') as unknown as Profile[]);
     }
   };
 
-  const filteredPosts = posts.filter(post => {
+  const fetchFollowing = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('user_connections')
+      .select('following_id')
+      .eq('follower_id', user.id);
+    
+    if (data) {
+      setFollowingIds(new Set(data.map(c => c.following_id)));
+    }
+  };
+
+  const handleFollow = async (userId: string) => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+
+    const isFollowing = followingIds.has(userId);
+
+    if (isFollowing) {
+      await supabase
+        .from('user_connections')
+        .delete()
+        .eq('follower_id', user.id)
+        .eq('following_id', userId);
+      
+      setFollowingIds(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    } else {
+      await supabase
+        .from('user_connections')
+        .insert({ follower_id: user.id, following_id: userId });
+      
+      setFollowingIds(prev => new Set(prev).add(userId));
+    }
+  };
+
+  // Filter posts and demo posts
+  const displayPosts = posts.length > 0 ? posts : [];
+  const displayMentors = mentors.length > 0 ? mentors : demoUsers.filter(u => u.role === 'mentor') as unknown as Profile[];
+
+  const filteredDemoPosts = activeCategory === 'all' 
+    ? demoPosts 
+    : demoPosts.filter(p => p.post_type === activeCategory);
+
+  const allPosts = displayPosts.length > 0 ? displayPosts : [];
+
+  const searchFilteredPosts = allPosts.filter(post => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
       post.title?.toLowerCase().includes(query) ||
       post.content.toLowerCase().includes(query) ||
-      post.tags.some(tag => tag.toLowerCase().includes(query)) ||
+      post.tags?.some(tag => tag.toLowerCase().includes(query)) ||
       post.profiles?.full_name?.toLowerCase().includes(query)
+    );
+  });
+
+  const searchFilteredDemoPosts = filteredDemoPosts.filter(post => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      post.title?.toLowerCase().includes(query) ||
+      post.content.toLowerCase().includes(query) ||
+      post.tags?.some(tag => tag.toLowerCase().includes(query)) ||
+      post.author?.full_name?.toLowerCase().includes(query)
     );
   });
 
@@ -139,7 +215,7 @@ const Explore = () => {
               Explore
             </h1>
             <p className="text-muted-foreground mt-1">
-              Discover projects, code snippets, and talented individuals.
+              Discover trending projects, code snippets, and talented individuals.
             </p>
           </div>
 
@@ -205,13 +281,14 @@ const Explore = () => {
             <div className="flex justify-center py-12">
               <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : filteredPosts.length === 0 ? (
+          ) : searchFilteredPosts.length === 0 && searchFilteredDemoPosts.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-muted-foreground">No posts found. Be the first to share something!</p>
+              <p className="text-muted-foreground">No posts found. Try a different search!</p>
             </div>
           ) : (
             <div className="space-y-6">
-              {filteredPosts.map((post, index) => (
+              {/* Real posts */}
+              {searchFilteredPosts.map((post, index) => (
                 <motion.div
                   key={post.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -219,6 +296,7 @@ const Explore = () => {
                   transition={{ delay: index * 0.05 }}
                 >
                   <PostCard
+                    id={post.id}
                     author={{
                       name: post.is_anonymous ? "Anonymous" : (post.profiles?.full_name || "Unknown User"),
                       avatar: post.profiles?.avatar_url || undefined,
@@ -227,7 +305,7 @@ const Explore = () => {
                     timeAgo={getTimeAgo(post.created_at)}
                     title={post.title || ""}
                     content={post.content}
-                    tags={post.tags}
+                    tags={post.tags || []}
                     likes={post.likes_count}
                     comments={post.comments_count}
                     isCodePost={post.post_type === 'code'}
@@ -239,35 +317,92 @@ const Explore = () => {
                   />
                 </motion.div>
               ))}
+
+              {/* Demo posts if no real ones */}
+              {searchFilteredPosts.length === 0 && searchFilteredDemoPosts.map((post, index) => (
+                <motion.div
+                  key={post.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <PostCard
+                    author={{
+                      name: post.author.full_name,
+                      avatar: post.author.avatar_url || undefined,
+                      field: post.author.university || "Student",
+                    }}
+                    timeAgo={getTimeAgo(post.created_at)}
+                    title={post.title}
+                    content={post.content}
+                    tags={post.tags}
+                    likes={post.likes_count}
+                    comments={post.comments_count}
+                    isCodePost={post.post_type === 'code'}
+                    code={post.code_content ? {
+                      content: post.code_content,
+                      language: post.code_language || 'python',
+                      filename: `snippet.${post.code_language || 'py'}`
+                    } : undefined}
+                  />
+                </motion.div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Right Sidebar - Suggested Users */}
+        {/* Right Sidebar */}
         <aside className="w-80 hidden xl:block space-y-6">
+          {/* Mentors Section */}
           <div className="bg-card rounded-xl border border-border p-5">
             <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Discover People
+              <Award className="h-4 w-4 text-amber-500" />
+              Featured Mentors
             </h3>
             <div className="space-y-4">
-              {users.map((profile) => (
-                <div key={profile.id} className="flex items-center gap-3">
-                  <UserAvatar name={profile.full_name || "User"} src={profile.avatar_url || undefined} size="md" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm text-foreground truncate">
-                      {profile.full_name || "Unknown User"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {profile.university || "Student"}
-                    </p>
-                    <RoleBadge role={profile.role} size="sm" className="mt-1" />
+              {displayMentors.slice(0, 4).map((mentor) => {
+                const isFollowing = followingIds.has(mentor.id);
+                return (
+                  <div key={mentor.id} className="p-3 rounded-lg hover:bg-muted/50 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <Link to={`/profile/${mentor.id}`}>
+                        <UserAvatar name={mentor.full_name || "Mentor"} src={mentor.avatar_url || undefined} size="md" />
+                      </Link>
+                      <div className="flex-1 min-w-0">
+                        <Link to={`/profile/${mentor.id}`} className="hover:underline">
+                          <p className="font-medium text-sm text-foreground truncate">
+                            {mentor.full_name || "Mentor"}
+                          </p>
+                        </Link>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {mentor.university}
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {mentor.skills?.slice(0, 2).map(skill => (
+                            <Tag key={skill} variant="default" className="text-xs py-0 px-1">
+                              {skill}
+                            </Tag>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <Button 
+                        variant={isFollowing ? "outline" : "default"}
+                        size="sm" 
+                        className="flex-1 gap-1"
+                        onClick={() => handleFollow(mentor.id)}
+                      >
+                        <UserPlus className="h-3 w-3" />
+                        {isFollowing ? "Following" : "Follow"}
+                      </Button>
+                      <Button variant="outline" size="sm" className="flex-1">
+                        Request Guidance
+                      </Button>
+                    </div>
                   </div>
-                  <Button variant="outline" size="sm">
-                    Follow
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -275,10 +410,35 @@ const Explore = () => {
           <div className="bg-card rounded-xl border border-border p-5">
             <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
-              Trending Tags
+              Trending Technologies
             </h3>
+            <div className="space-y-3">
+              {trendingTech.map((tech) => (
+                <div
+                  key={tech.name}
+                  className="p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => setSearchQuery(tech.name)}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-6 h-6 rounded ${tech.color} flex items-center justify-center text-white text-xs font-bold`}>
+                        {tech.abbr}
+                      </div>
+                      <span className="font-medium text-sm text-foreground">{tech.name}</span>
+                    </div>
+                    <span className="text-xs text-success font-medium">{tech.change}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground ml-8">{tech.postCount} posts</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick Tags */}
+          <div className="bg-card rounded-xl border border-border p-5">
+            <h3 className="font-semibold text-foreground mb-4">Popular Tags</h3>
             <div className="flex flex-wrap gap-2">
-              {['React', 'Python', 'MachineLearning', 'WebDev', 'IoT', 'TypeScript', 'Rust', 'Docker'].map(tag => (
+              {['React', 'Python', 'MachineLearning', 'WebDev', 'IoT', 'TypeScript', 'Rust', 'Docker', 'AWS', 'DSA'].map(tag => (
                 <Button
                   key={tag}
                   variant="outline"

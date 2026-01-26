@@ -1,11 +1,19 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Calendar, MapPin, Users, Clock, Video, ExternalLink, Plus, Filter } from "lucide-react";
+import { Calendar, MapPin, Users, Clock, Video, ExternalLink, Plus, Filter, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { demoEvents } from "@/lib/seedData";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface Event {
   id: string;
@@ -21,6 +29,7 @@ interface Event {
   created_at: string;
   participant_count?: number;
   is_registered?: boolean;
+  organizer?: string;
 }
 
 const eventTypeColors: Record<string, string> = {
@@ -35,7 +44,10 @@ const Events = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "upcoming" | "registered">("upcoming");
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [registeredEvents, setRegisteredEvents] = useState<Set<string>>(new Set());
   const { user } = useAuth();
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchEvents();
@@ -55,7 +67,7 @@ const Events = () => {
 
     const { data, error } = await query;
 
-    if (!error && data) {
+    if (!error && data && data.length > 0) {
       // Fetch participant counts and registration status
       const eventsWithDetails = await Promise.all(
         data.map(async (event) => {
@@ -73,6 +85,9 @@ const Events = () => {
               .eq('user_id', user.id)
               .maybeSingle();
             isRegistered = !!registration;
+            if (isRegistered) {
+              setRegisteredEvents(prev => new Set(prev).add(event.id));
+            }
           }
 
           return {
@@ -88,29 +103,87 @@ const Events = () => {
       } else {
         setEvents(eventsWithDetails);
       }
+    } else {
+      // Use demo events if no real events exist
+      const demoWithRegistration = demoEvents.map(e => ({
+        ...e,
+        is_registered: registeredEvents.has(e.id),
+        created_by: null,
+        created_at: new Date().toISOString(),
+        end_date: e.end_date || null
+      }));
+      
+      if (filter === "registered") {
+        setEvents(demoWithRegistration.filter(e => e.is_registered) as Event[]);
+      } else {
+        setEvents(demoWithRegistration as Event[]);
+      }
     }
 
     setLoading(false);
   };
 
   const handleRegister = async (eventId: string) => {
-    if (!user) return;
+    if (!user) {
+      toast({ title: "Please log in", description: "You must be logged in to register for events", variant: "destructive" });
+      return;
+    }
 
-    const event = events.find(e => e.id === eventId);
-    if (!event) return;
+    const isDemo = eventId.startsWith('demo-');
+    const isRegistered = registeredEvents.has(eventId);
 
-    if (event.is_registered) {
-      // Unregister
-      await supabase
+    if (isDemo) {
+      // Handle demo event registration locally
+      if (isRegistered) {
+        setRegisteredEvents(prev => {
+          const next = new Set(prev);
+          next.delete(eventId);
+          return next;
+        });
+        toast({ title: "Unregistered", description: "You've been unregistered from this event" });
+      } else {
+        setRegisteredEvents(prev => new Set(prev).add(eventId));
+        toast({ title: "Registered!", description: "You're now registered for this event" });
+      }
+      
+      // Update local state
+      setEvents(events.map(e => 
+        e.id === eventId 
+          ? { 
+              ...e, 
+              is_registered: !isRegistered,
+              participant_count: (e.participant_count || 0) + (isRegistered ? -1 : 1)
+            } 
+          : e
+      ));
+      return;
+    }
+
+    // Handle real event registration
+    if (isRegistered) {
+      const { error } = await supabase
         .from('event_participants')
         .delete()
         .eq('event_id', eventId)
         .eq('user_id', user.id);
+
+      if (!error) {
+        setRegisteredEvents(prev => {
+          const next = new Set(prev);
+          next.delete(eventId);
+          return next;
+        });
+        toast({ title: "Unregistered" });
+      }
     } else {
-      // Register
-      await supabase
+      const { error } = await supabase
         .from('event_participants')
         .insert({ event_id: eventId, user_id: user.id });
+
+      if (!error) {
+        setRegisteredEvents(prev => new Set(prev).add(eventId));
+        toast({ title: "Registered!", description: "You're now registered for this event" });
+      }
     }
 
     fetchEvents();
@@ -173,74 +246,163 @@ const Events = () => {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {events.map((event, index) => (
-            <motion.div
-              key={event.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className="bg-card rounded-xl border border-border p-5 card-hover"
-            >
-              <div className="flex items-start justify-between mb-3">
+          {events.map((event, index) => {
+            const isRegistered = registeredEvents.has(event.id) || event.is_registered;
+            return (
+              <motion.div
+                key={event.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                className="bg-card rounded-xl border border-border p-5 card-hover cursor-pointer"
+                onClick={() => setSelectedEvent(event)}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <span className={cn(
+                    "px-2.5 py-1 rounded-full text-xs font-medium capitalize",
+                    eventTypeColors[event.event_type] || eventTypeColors.workshop
+                  )}>
+                    {event.event_type}
+                  </span>
+                  {event.is_online && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Video className="h-3 w-3" />
+                      Online
+                    </span>
+                  )}
+                </div>
+
+                <h3 className="text-lg font-semibold text-foreground mb-2">{event.title}</h3>
+                
+                {event.description && (
+                  <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+                    {event.description}
+                  </p>
+                )}
+
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    <span>{format(new Date(event.start_date), "MMM d, yyyy 'at' h:mm a")}</span>
+                  </div>
+                  {event.location && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <MapPin className="h-4 w-4" />
+                      <span>{event.location}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Users className="h-4 w-4" />
+                    <span>
+                      {event.participant_count} registered
+                      {event.max_participants && ` / ${event.max_participants} spots`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    variant={isRegistered ? "outline" : "default"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRegister(event.id);
+                    }}
+                  >
+                    {isRegistered ? "Registered ✓" : "Register Now"}
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedEvent(event);
+                  }}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Event Detail Dialog */}
+      <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{selectedEvent?.title}</DialogTitle>
+          </DialogHeader>
+          {selectedEvent && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
                 <span className={cn(
                   "px-2.5 py-1 rounded-full text-xs font-medium capitalize",
-                  eventTypeColors[event.event_type] || eventTypeColors.workshop
+                  eventTypeColors[selectedEvent.event_type] || eventTypeColors.workshop
                 )}>
-                  {event.event_type}
+                  {selectedEvent.event_type}
                 </span>
-                {event.is_online && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                {selectedEvent.is_online && (
+                  <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-full">
                     <Video className="h-3 w-3" />
                     Online
                   </span>
                 )}
               </div>
 
-              <h3 className="text-lg font-semibold text-foreground mb-2">{event.title}</h3>
-              
-              {event.description && (
-                <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                  {event.description}
-                </p>
-              )}
+              <p className="text-muted-foreground">{selectedEvent.description}</p>
 
-              <div className="space-y-2 mb-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span>{format(new Date(event.start_date), "MMM d, yyyy 'at' h:mm a")}</span>
+              <div className="space-y-3 pt-4 border-t border-border">
+                <div className="flex items-center gap-3">
+                  <Clock className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">Date & Time</p>
+                    <p className="text-sm text-muted-foreground">
+                      {format(new Date(selectedEvent.start_date), "EEEE, MMMM d, yyyy 'at' h:mm a")}
+                    </p>
+                  </div>
                 </div>
-                {event.location && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <MapPin className="h-4 w-4" />
-                    <span>{event.location}</span>
+
+                {selectedEvent.location && (
+                  <div className="flex items-center gap-3">
+                    <MapPin className="h-5 w-5 text-primary" />
+                    <div>
+                      <p className="font-medium">Location</p>
+                      <p className="text-sm text-muted-foreground">{selectedEvent.location}</p>
+                    </div>
                   </div>
                 )}
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Users className="h-4 w-4" />
-                  <span>
-                    {event.participant_count} registered
-                    {event.max_participants && ` / ${event.max_participants} spots`}
-                  </span>
+
+                <div className="flex items-center gap-3">
+                  <Users className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">Participants</p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedEvent.participant_count} registered
+                      {selectedEvent.max_participants && ` of ${selectedEvent.max_participants} spots`}
+                    </p>
+                  </div>
                 </div>
+
+                {(selectedEvent as any).organizer && (
+                  <div className="flex items-center gap-3">
+                    <Users className="h-5 w-5 text-primary" />
+                    <div>
+                      <p className="font-medium">Organizer</p>
+                      <p className="text-sm text-muted-foreground">{(selectedEvent as any).organizer}</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="flex gap-2">
-                <Button
-                  className="flex-1"
-                  variant={event.is_registered ? "outline" : "default"}
-                  onClick={() => handleRegister(event.id)}
-                  disabled={!user}
-                >
-                  {event.is_registered ? "Unregister" : "Register"}
-                </Button>
-                <Button variant="ghost" size="icon">
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
+              <Button 
+                className="w-full" 
+                variant={registeredEvents.has(selectedEvent.id) ? "outline" : "default"}
+                onClick={() => handleRegister(selectedEvent.id)}
+              >
+                {registeredEvents.has(selectedEvent.id) ? "Registered ✓" : "Register for Event"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

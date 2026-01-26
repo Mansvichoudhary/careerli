@@ -17,7 +17,7 @@ import {
   Mic,
   MicOff,
   Headphones,
-  HeadphoneOff,
+  VolumeX,
   PhoneOff,
   Loader2,
 } from "lucide-react";
@@ -272,7 +272,7 @@ const Chat = () => {
                 className="h-8 w-8"
                 onClick={toggleDeafen}
               >
-                {isDeafened ? <HeadphoneOff className="h-4 w-4" /> : <Headphones className="h-4 w-4" />}
+                {isDeafened ? <VolumeX className="h-4 w-4" /> : <Headphones className="h-4 w-4" />}
               </Button>
               <Button
                 variant="destructive"
