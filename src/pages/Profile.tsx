@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Folder,
   Users,
@@ -11,58 +12,217 @@ import {
   GitFork,
   ExternalLink,
   Plus,
-  Calendar,
   CheckCircle2,
   Eye,
+  UserPlus,
+  UserCheck,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tag } from "@/components/ui/tag";
 import UserAvatar from "@/components/Avatar";
+import RoleBadge from "@/components/RoleBadge";
+import PostCard from "@/components/PostCard";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
-const stats = [
-  { label: "Projects", value: "12", icon: Folder },
-  { label: "Collaborators", value: "8", icon: Users },
-  { label: "Questions", value: "45", icon: MessageSquare },
-];
+interface Profile {
+  id: string;
+  user_id: string;
+  username: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  role: 'student' | 'mentor';
+  location: string | null;
+  university: string | null;
+  github_url: string | null;
+  linkedin_url: string | null;
+  portfolio_url: string | null;
+  skills: string[];
+}
 
-const skills = ["React", "Python", "AWS", "Docker", "TypeScript", "Node.js"];
-
-const projects = [
-  {
-    title: "Smart Home IoT Dashboard",
-    dates: "Sep 2023 - Present",
-    description:
-      "A centralized dashboard for managing smart home devices using MQTT protocol. Features real-time energy consumption tracking and automated scheduling.",
-    tags: ["React", "Node.js", "MQTT"],
-    stats: { stars: 12, forks: 4 },
-    isActive: true,
-    latestUpdate: "Implemented OAuth2 authentication for secure device access.",
-    updatedAgo: "2 days ago",
-    image: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&auto=format&fit=crop&q=60",
-  },
-  {
-    title: "AlgoVisualizer",
-    dates: "Jan 2023 - Jun 2023",
-    description:
-      "Interactive platform to visualize common sorting and pathfinding algorithms in real-time. Helped 500+ students understand complex DS concepts.",
-    tags: ["D3.js", "TypeScript"],
-    stats: { views: "1.2k" },
-    isActive: false,
-    hasDemo: true,
-    image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400&auto=format&fit=crop&q=60",
-  },
-  {
-    title: "Personal Portfolio V1",
-    dates: "Dec 2022",
-    description:
-      "Designed and deployed my first personal website using HTML/CSS and vanilla JS.",
-    tags: ["HTML5", "CSS3"],
-    isActive: false,
-  },
-];
+interface Post {
+  id: string;
+  title: string | null;
+  content: string;
+  post_type: string;
+  code_content: string | null;
+  code_language: string | null;
+  tags: string[];
+  likes_count: number;
+  comments_count: number;
+  created_at: string;
+}
 
 const Profile = () => {
-  const [activeTab, setActiveTab] = useState("timeline");
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user, profile: currentUserProfile } = useAuth();
+  const { toast } = useToast();
+  
+  const [profileData, setProfileData] = useState<Profile | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [postsCount, setPostsCount] = useState(0);
+  
+  const isOwnProfile = !id || (user && profileData?.user_id === user.id);
+
+  useEffect(() => {
+    if (id) {
+      fetchProfile(id);
+    } else if (user) {
+      fetchOwnProfile();
+    }
+  }, [id, user]);
+
+  const fetchProfile = async (profileId: string) => {
+    setLoading(true);
+    
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (error || !profile) {
+      toast({ title: "Profile not found", variant: "destructive" });
+      navigate('/home');
+      return;
+    }
+
+    setProfileData(profile as Profile);
+    await Promise.all([
+      fetchUserPosts(profile.user_id),
+      fetchFollowStatus(profile.id),
+      fetchCounts(profile.user_id, profile.id)
+    ]);
+    setLoading(false);
+  };
+
+  const fetchOwnProfile = async () => {
+    if (!user) return;
+    setLoading(true);
+    
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (profile) {
+      setProfileData(profile as Profile);
+      await Promise.all([
+        fetchUserPosts(user.id),
+        fetchCounts(user.id, profile.id)
+      ]);
+    }
+    setLoading(false);
+  };
+
+  const fetchUserPosts = async (userId: string) => {
+    const { data } = await supabase
+      .from('posts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (data) {
+      setPosts(data as Post[]);
+      setPostsCount(data.length);
+    }
+  };
+
+  const fetchFollowStatus = async (profileId: string) => {
+    if (!user) return;
+    
+    const { data } = await supabase
+      .from('user_connections')
+      .select('id')
+      .eq('follower_id', user.id)
+      .eq('following_id', profileId)
+      .maybeSingle();
+
+    setIsFollowing(!!data);
+  };
+
+  const fetchCounts = async (userId: string, profileId: string) => {
+    // Followers count
+    const { count: followers } = await supabase
+      .from('user_connections')
+      .select('*', { count: 'exact', head: true })
+      .eq('following_id', profileId);
+
+    // Following count  
+    const { count: following } = await supabase
+      .from('user_connections')
+      .select('*', { count: 'exact', head: true })
+      .eq('follower_id', userId);
+
+    setFollowersCount(followers || 0);
+    setFollowingCount(following || 0);
+  };
+
+  const handleFollow = async () => {
+    if (!user || !profileData) {
+      navigate('/login');
+      return;
+    }
+
+    if (isFollowing) {
+      await supabase
+        .from('user_connections')
+        .delete()
+        .eq('follower_id', user.id)
+        .eq('following_id', profileData.id);
+      setIsFollowing(false);
+      setFollowersCount(prev => prev - 1);
+    } else {
+      await supabase
+        .from('user_connections')
+        .insert({ follower_id: user.id, following_id: profileData.id });
+      setIsFollowing(true);
+      setFollowersCount(prev => prev + 1);
+    }
+  };
+
+  const getTimeAgo = (dateString: string) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!profileData) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">Profile not found</p>
+      </div>
+    );
+  }
+
+  const stats = [
+    { label: "Posts", value: postsCount.toString(), icon: Folder },
+    { label: "Followers", value: followersCount.toString(), icon: Users },
+    { label: "Following", value: followingCount.toString(), icon: Users },
+  ];
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -76,70 +236,98 @@ const Profile = () => {
             className="bg-card rounded-xl border border-border p-6 text-center"
           >
             <div className="relative inline-block mb-4">
-              <UserAvatar name="Alex Chen" size="xl" />
+              <UserAvatar name={profileData.full_name || "User"} src={profileData.avatar_url || undefined} size="xl" />
               <span className="absolute bottom-1 right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-card" />
             </div>
-            <h2 className="text-xl font-bold text-foreground">Alex Chen</h2>
-            <p className="text-muted-foreground">Computer Science @ Stanford '25</p>
-            <Tag className="mt-3 bg-success-soft text-success">
-              <span className="w-2 h-2 rounded-full bg-success mr-1.5" />
-              Open to Work
-            </Tag>
-
-            <div className="flex gap-2 mt-4">
-              <Button className="flex-1">Connect</Button>
-              <Button variant="outline" className="flex-1">
-                Message
-              </Button>
+            <h2 className="text-xl font-bold text-foreground">{profileData.full_name || "User"}</h2>
+            <p className="text-muted-foreground">{profileData.university || profileData.role}</p>
+            <div className="flex justify-center mt-2">
+              <RoleBadge role={profileData.role} size="md" />
             </div>
 
+            {!isOwnProfile && (
+              <div className="flex gap-2 mt-4">
+                <Button 
+                  className="flex-1 gap-2" 
+                  variant={isFollowing ? "outline" : "default"}
+                  onClick={handleFollow}
+                >
+                  {isFollowing ? <UserCheck className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                  {isFollowing ? "Following" : "Follow"}
+                </Button>
+                <Button variant="outline" className="flex-1">
+                  Message
+                </Button>
+              </div>
+            )}
+
+            {isOwnProfile && (
+              <Button className="w-full mt-4" variant="outline" onClick={() => navigate('/settings')}>
+                Edit Profile
+              </Button>
+            )}
+
             <div className="flex justify-center gap-6 mt-6 pt-6 border-t border-border">
-              <Button variant="ghost" size="sm" className="flex-col gap-1 h-auto py-2">
-                <Code2 className="h-5 w-5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">GitHub</span>
-              </Button>
-              <Button variant="ghost" size="sm" className="flex-col gap-1 h-auto py-2">
-                <Linkedin className="h-5 w-5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">LinkedIn</span>
-              </Button>
-              <Button variant="ghost" size="sm" className="flex-col gap-1 h-auto py-2">
-                <LinkIcon className="h-5 w-5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">Copy Link</span>
-              </Button>
+              {profileData.github_url && (
+                <a href={profileData.github_url} target="_blank" rel="noopener noreferrer">
+                  <Button variant="ghost" size="sm" className="flex-col gap-1 h-auto py-2">
+                    <Code2 className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">GitHub</span>
+                  </Button>
+                </a>
+              )}
+              {profileData.linkedin_url && (
+                <a href={profileData.linkedin_url} target="_blank" rel="noopener noreferrer">
+                  <Button variant="ghost" size="sm" className="flex-col gap-1 h-auto py-2">
+                    <Linkedin className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">LinkedIn</span>
+                  </Button>
+                </a>
+              )}
+              {profileData.portfolio_url && (
+                <a href={profileData.portfolio_url} target="_blank" rel="noopener noreferrer">
+                  <Button variant="ghost" size="sm" className="flex-col gap-1 h-auto py-2">
+                    <ExternalLink className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Website</span>
+                  </Button>
+                </a>
+              )}
             </div>
           </motion.div>
 
           {/* About Me */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-card rounded-xl border border-border p-5"
-          >
-            <h3 className="font-semibold text-foreground mb-3">About Me</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Full-stack developer passionate about building scalable web
-              applications. Currently exploring AI/ML integration in consumer apps.
-              I love open source contribution and hackathons.
-            </p>
-          </motion.div>
+          {profileData.bio && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="bg-card rounded-xl border border-border p-5"
+            >
+              <h3 className="font-semibold text-foreground mb-3">About Me</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {profileData.bio}
+              </p>
+            </motion.div>
+          )}
 
           {/* Top Skills */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-card rounded-xl border border-border p-5"
-          >
-            <h3 className="font-semibold text-foreground mb-3">Top Skills</h3>
-            <div className="flex flex-wrap gap-2">
-              {skills.map((skill) => (
-                <Tag key={skill} variant="default">
-                  {skill}
-                </Tag>
-              ))}
-            </div>
-          </motion.div>
+          {profileData.skills && profileData.skills.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bg-card rounded-xl border border-border p-5"
+            >
+              <h3 className="font-semibold text-foreground mb-3">Top Skills</h3>
+              <div className="flex flex-wrap gap-2">
+                {profileData.skills.map((skill) => (
+                  <Tag key={skill} variant="default">
+                    {skill}
+                  </Tag>
+                ))}
+              </div>
+            </motion.div>
+          )}
         </aside>
 
         {/* Right Column - Content */}
@@ -163,7 +351,7 @@ const Profile = () => {
             ))}
           </div>
 
-          {/* Project Timeline */}
+          {/* Posts */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -172,115 +360,44 @@ const Profile = () => {
           >
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-semibold text-foreground">
-                Project Timeline
+                Recent Posts
               </h3>
-              <Button variant="link" className="text-primary p-0 h-auto">
-                View All
-              </Button>
             </div>
 
-            <div className="space-y-6">
-              {projects.map((project, index) => (
-                <div key={project.title} className="relative pl-6">
-                  {/* Timeline dot */}
-                  <div
-                    className={`absolute left-0 top-1.5 w-3 h-3 rounded-full border-2 ${
-                      project.isActive
-                        ? "bg-primary border-primary"
-                        : "bg-muted border-border"
-                    }`}
+            {posts.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">No posts yet</p>
+                {isOwnProfile && (
+                  <Button onClick={() => navigate('/create')}>Create Your First Post</Button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {posts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    id={post.id}
+                    author={{
+                      name: profileData.full_name || "User",
+                      avatar: profileData.avatar_url || undefined,
+                      field: profileData.university || profileData.role,
+                    }}
+                    timeAgo={getTimeAgo(post.created_at)}
+                    title={post.title || ""}
+                    content={post.content}
+                    tags={post.tags || []}
+                    likes={post.likes_count || 0}
+                    comments={post.comments_count || 0}
+                    isCodePost={post.post_type === 'code'}
+                    code={post.code_content ? {
+                      content: post.code_content,
+                      language: post.code_language || 'javascript',
+                      filename: `snippet.${post.code_language || 'js'}`
+                    } : undefined}
                   />
-                  {/* Timeline line */}
-                  {index !== projects.length - 1 && (
-                    <div className="absolute left-[5px] top-5 w-0.5 h-[calc(100%+12px)] bg-border" />
-                  )}
-
-                  <div className="flex gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between mb-2">
-                        <h4 className="font-semibold text-foreground">
-                          {project.title}
-                        </h4>
-                        <Tag variant="default" className="text-xs">
-                          {project.dates}
-                        </Tag>
-                      </div>
-
-                      <div className="flex gap-4 mb-3">
-                        {project.image && (
-                          <img
-                            src={project.image}
-                            alt={project.title}
-                            className="w-24 h-20 rounded-lg object-cover flex-shrink-0"
-                          />
-                        )}
-                        <p className="text-sm text-muted-foreground">
-                          {project.description}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {project.tags.map((tag) => (
-                          <Tag key={tag} variant="react">
-                            {tag}
-                          </Tag>
-                        ))}
-                      </div>
-
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        {project.stats?.stars && (
-                          <span className="flex items-center gap-1">
-                            <Star className="h-4 w-4" />
-                            {project.stats.stars} Stars
-                          </span>
-                        )}
-                        {project.stats?.forks && (
-                          <span className="flex items-center gap-1">
-                            <GitFork className="h-4 w-4" />
-                            {project.stats.forks} Forks
-                          </span>
-                        )}
-                        {project.stats?.views && (
-                          <span className="flex items-center gap-1">
-                            <Eye className="h-4 w-4" />
-                            {project.stats.views} Views
-                          </span>
-                        )}
-                        {project.hasDemo && (
-                          <Button
-                            variant="link"
-                            className="text-primary p-0 h-auto text-sm gap-1"
-                          >
-                            View Live Demo
-                            <ExternalLink className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
-
-                      {project.latestUpdate && (
-                        <div className="flex items-center gap-2 mt-3 p-2 bg-success-soft rounded-lg text-sm">
-                          <CheckCircle2 className="h-4 w-4 text-success" />
-                          <span className="text-muted-foreground">
-                            <span className="font-medium text-foreground">
-                              Latest Update:
-                            </span>{" "}
-                            {project.latestUpdate}
-                          </span>
-                          <span className="text-muted-foreground ml-auto">
-                            {project.updatedAgo}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <Button variant="link" className="text-primary gap-2 p-0 h-auto mt-4">
-              <Plus className="h-4 w-4" />
-              Add older project
-            </Button>
+                ))}
+              </div>
+            )}
           </motion.div>
         </div>
       </div>

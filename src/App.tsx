@@ -47,8 +47,10 @@ const App = () => (
               <Route path="/saved" element={<Home />} />
               <Route path="/collaborations" element={<Connections />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/profile/:id" element={<Profile />} />
               <Route path="/settings/*" element={<Settings />} />
               <Route path="/chat" element={<Chat />} />
+              <Route path="/groups" element={<Chat />} />
             </Route>
             
             {/* Create Post - Full Screen */}
