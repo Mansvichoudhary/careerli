@@ -30,22 +30,22 @@ const features = [
 
 const testimonials = [
   {
-    name: 'Sarah K.',
-    role: 'CS Student @ MIT',
+    name: 'Priya Sharma',
+    role: 'CS Student @ IIT Delhi',
     content: 'Finally a platform where I can share my buggy code without feeling embarrassed. Got amazing help debugging my first ML project!',
-    avatar: 'SK'
+    avatar: 'PS'
   },
   {
-    name: 'Dr. James L.',
-    role: 'Mentor, Software Engineer',
+    name: 'Mansvi Choudhary',
+    role: 'Mentor, Full Stack Developer',
     content: 'As a mentor, I love seeing students\' thought processes. It helps me give better guidance than just reviewing polished portfolios.',
-    avatar: 'JL'
+    avatar: 'MC'
   },
   {
-    name: 'Mike C.',
-    role: 'EE Student @ Stanford',
+    name: 'Arjun Patel',
+    role: 'ECE Student @ NIT Trichy',
     content: 'The code snippet feature is incredible. I can share my Arduino sketches and people can actually run and test them!',
-    avatar: 'MC'
+    avatar: 'AP'
   }
 ];
 
@@ -133,16 +133,13 @@ const Landing = () => {
               className="mt-12 flex items-center justify-center gap-4"
             >
               <div className="flex -space-x-3">
-                <UserAvatar name="Sarah K" size="md" />
-                <UserAvatar name="Mike C" size="md" />
-                <UserAvatar name="Emma D" size="md" />
-                <UserAvatar name="James W" size="md" />
-                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold border-2 border-background">
-                  +5k
-                </div>
+                <UserAvatar name="Ritik S" size="md" />
+                <UserAvatar name="Khushi K" size="md" />
+                <UserAvatar name="Mansvi C" size="md" />
+                <UserAvatar name="Arjun P" size="md" />
               </div>
               <p className="text-muted-foreground">
-                Join <span className="text-foreground font-semibold">10,000+</span> students already building
+                Join students building and learning together
               </p>
             </motion.div>
           </div>
