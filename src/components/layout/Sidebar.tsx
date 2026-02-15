@@ -11,6 +11,7 @@ import {
   Settings,
   Code2,
   LogOut,
+  Lightbulb,
 } from "lucide-react";
 import Logo from "@/components/Logo";
 import UserAvatar from "@/components/Avatar";
@@ -56,6 +57,7 @@ const Sidebar = () => {
     { to: "/explore", icon: <Compass className="h-5 w-5" />, label: "Explore" },
     { to: "/snippets", icon: <Code2 className="h-5 w-5" />, label: "Code Snippets" },
     { to: "/connections", icon: <Users className="h-5 w-5" />, label: "Connections" },
+    { to: "/problems", icon: <Lightbulb className="h-5 w-5" />, label: "Ask the Workshop" },
     { to: "/events", icon: <Folder className="h-5 w-5" />, label: "Events" },
     { to: "/notifications", icon: <Bookmark className="h-5 w-5" />, label: "Notifications" },
   ];

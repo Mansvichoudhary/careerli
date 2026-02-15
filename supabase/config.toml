@@ -1,1 +1,4 @@
 project_id = "jbocfkpsqmuotbqhmiqr"
+
+[functions.analyze-problem]
+verify_jwt = false
