@@ -17,6 +17,7 @@ import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import CreatePost from "./pages/CreatePost";
 import Chat from "./pages/Chat";
+import Problems from "./pages/Problems";
 import MainLayout from "./components/layout/MainLayout";
 import NotFound from "./pages/NotFound";
 
@@ -51,6 +52,7 @@ const App = () => (
               <Route path="/settings/*" element={<Settings />} />
               <Route path="/chat" element={<Chat />} />
               <Route path="/groups" element={<Chat />} />
+              <Route path="/problems" element={<Problems />} />
             </Route>
             
             {/* Create Post - Full Screen */}

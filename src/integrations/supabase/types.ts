@@ -348,6 +348,69 @@ export type Database = {
         }
         Relationships: []
       }
+      problems: {
+        Row: {
+          ai_analyzed_at: string | null
+          ai_concepts: string[] | null
+          ai_difficulty: string | null
+          ai_learning_topics: string[] | null
+          ai_mentor_tags: string[] | null
+          ai_suggested_actions: string[] | null
+          ai_summary: string | null
+          author_id: string
+          code_snippet: string | null
+          created_at: string
+          description: string
+          id: string
+          related_post_ids: string[] | null
+          skill_level: string
+          status: string
+          tech_tags: string[]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          ai_analyzed_at?: string | null
+          ai_concepts?: string[] | null
+          ai_difficulty?: string | null
+          ai_learning_topics?: string[] | null
+          ai_mentor_tags?: string[] | null
+          ai_suggested_actions?: string[] | null
+          ai_summary?: string | null
+          author_id: string
+          code_snippet?: string | null
+          created_at?: string
+          description: string
+          id?: string
+          related_post_ids?: string[] | null
+          skill_level?: string
+          status?: string
+          tech_tags?: string[]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          ai_analyzed_at?: string | null
+          ai_concepts?: string[] | null
+          ai_difficulty?: string | null
+          ai_learning_topics?: string[] | null
+          ai_mentor_tags?: string[] | null
+          ai_suggested_actions?: string[] | null
+          ai_summary?: string | null
+          author_id?: string
+          code_snippet?: string | null
+          created_at?: string
+          description?: string
+          id?: string
+          related_post_ids?: string[] | null
+          skill_level?: string
+          status?: string
+          tech_tags?: string[]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
