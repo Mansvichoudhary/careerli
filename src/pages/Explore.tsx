@@ -1,16 +1,16 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Search, Filter, TrendingUp, Globe, Cpu, Brain, Server, Users, Code2, Sparkles, Award, UserPlus } from "lucide-react";
+import { Search, Filter, Globe, Cpu, Brain, Code2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PostCard from "@/components/PostCard";
-import UserAvatar from "@/components/Avatar";
-import RoleBadge from "@/components/RoleBadge";
-import { Tag } from "@/components/ui/tag";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { demoPosts, demoUsers, trendingTech } from "@/lib/seedData";
+import FeaturedMentors from "@/components/widgets/FeaturedMentors";
+import TrendingTech, { TrendingTechItem } from "@/components/widgets/TrendingTech";
+import PopularTags from "@/components/widgets/PopularTags";
 
 interface Profile {
   id: string;
@@ -163,6 +163,10 @@ const Explore = () => {
   // Filter posts and demo posts
   const displayPosts = posts.length > 0 ? posts : [];
   const displayMentors = mentors.length > 0 ? mentors : demoUsers.filter(u => u.role === 'mentor') as unknown as Profile[];
+  const mappedTrendingTech: TrendingTechItem[] = trendingTech.map((tech) => ({
+    ...tech,
+    postCount: Number(tech.postCount),
+  }));
 
   const filteredDemoPosts = activeCategory === 'all' 
     ? demoPosts 
@@ -353,104 +357,12 @@ const Explore = () => {
 
         {/* Right Sidebar */}
         <aside className="w-80 hidden xl:block space-y-6">
-          {/* Mentors Section */}
-          <div className="bg-card rounded-xl border border-border p-5">
-            <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
-              <Award className="h-4 w-4 text-amber-500" />
-              Featured Mentors
-            </h3>
-            <div className="space-y-4">
-              {displayMentors.slice(0, 4).map((mentor) => {
-                const isFollowing = followingIds.has(mentor.id);
-                return (
-                  <div key={mentor.id} className="p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="flex items-start gap-3">
-                      <Link to={`/profile/${mentor.id}`}>
-                        <UserAvatar name={mentor.full_name || "Mentor"} src={mentor.avatar_url || undefined} size="md" />
-                      </Link>
-                      <div className="flex-1 min-w-0">
-                        <Link to={`/profile/${mentor.id}`} className="hover:underline">
-                          <p className="font-medium text-sm text-foreground truncate">
-                            {mentor.full_name || "Mentor"}
-                          </p>
-                        </Link>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {mentor.university}
-                        </p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {mentor.skills?.slice(0, 2).map(skill => (
-                            <Tag key={skill} variant="default" className="text-xs py-0 px-1">
-                              {skill}
-                            </Tag>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 mt-2">
-                      <Button 
-                        variant={isFollowing ? "outline" : "default"}
-                        size="sm" 
-                        className="flex-1 gap-1"
-                        onClick={() => handleFollow(mentor.id)}
-                      >
-                        <UserPlus className="h-3 w-3" />
-                        {isFollowing ? "Following" : "Follow"}
-                      </Button>
-                      <Button variant="outline" size="sm" className="flex-1">
-                        Request Guidance
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Trending Tags */}
-          <div className="bg-card rounded-xl border border-border p-5">
-            <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Trending Technologies
-            </h3>
-            <div className="space-y-3">
-              {trendingTech.map((tech) => (
-                <div
-                  key={tech.name}
-                  className="p-2 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
-                  onClick={() => setSearchQuery(tech.name)}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-6 h-6 rounded ${tech.color} flex items-center justify-center text-white text-xs font-bold`}>
-                        {tech.abbr}
-                      </div>
-                      <span className="font-medium text-sm text-foreground">{tech.name}</span>
-                    </div>
-                    <span className="text-xs text-success font-medium">{tech.change}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground ml-8">{tech.postCount} posts</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Quick Tags */}
-          <div className="bg-card rounded-xl border border-border p-5">
-            <h3 className="font-semibold text-foreground mb-4">Popular Tags</h3>
-            <div className="flex flex-wrap gap-2">
-              {['React', 'Python', 'MachineLearning', 'WebDev', 'IoT', 'TypeScript', 'Rust', 'Docker', 'AWS', 'DSA'].map(tag => (
-                <Button
-                  key={tag}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => setSearchQuery(tag)}
-                >
-                  #{tag}
-                </Button>
-              ))}
-            </div>
-          </div>
+          <FeaturedMentors mentors={displayMentors} followingIds={followingIds} onFollow={handleFollow} />
+          <TrendingTech items={mappedTrendingTech} onSelect={setSearchQuery} />
+          <PopularTags
+            tags={["React", "Python", "MachineLearning", "WebDev", "IoT", "TypeScript", "Rust", "Docker", "AWS", "DSA"]}
+            onSelectTag={setSearchQuery}
+          />
         </aside>
       </div>
     </div>
