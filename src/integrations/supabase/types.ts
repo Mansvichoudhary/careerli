@@ -70,6 +70,41 @@ export type Database = {
         }
         Relationships: []
       }
+      code_reviews: {
+        Row: {
+          created_at: string
+          id: string
+          message: string | null
+          post_id: string
+          reviewed_code: string
+          reviewer_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          post_id: string
+          reviewed_code: string
+          reviewer_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          post_id?: string
+          reviewed_code?: string
+          reviewer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "code_reviews_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comments: {
         Row: {
           content: string

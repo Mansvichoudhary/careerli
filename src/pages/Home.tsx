@@ -1,50 +1,8 @@
-import { useState, useEffect } from "react";
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Globe, Cpu, Brain, Server, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { Filter, TrendingUp, Globe, Cpu, Brain, Server, ArrowRight, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import PostCard from "@/components/PostCard";
-import UserAvatar from "@/components/Avatar";
-import { Tag } from "@/components/ui/tag";
-import RoleBadge from "@/components/RoleBadge";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import { useNavigate, Link } from "react-router-dom";
-import { demoPosts, demoUsers, demoEvents, trendingTech } from "@/lib/seedData";
-
-interface Profile {
-  id: string;
-  user_id: string;
-  username: string | null;
-  full_name: string | null;
-  avatar_url: string | null;
-  role: 'student' | 'mentor';
-  university: string | null;
-  skills: string[];
-  skills: string[] | null;
-}
-
-interface Post {
-  id: string;
-  title: string | null;
-  content: string;
-  post_type: string;
-  code_content: string | null;
-  code_language: string | null;
-  tags: string[];
-  likes_count: number;
-  comments_count: number;
-  tags: string[] | null;
-  likes_count: number | null;
-  comments_count: number | null;
-  created_at: string;
-  is_anonymous: boolean;
-  is_anonymous: boolean | null;
-  user_id: string;
-  media_urls: string[];
-  media_urls: string[] | null;
-  profiles: Profile | null;
-}
+import { useFeed } from "@/hooks/useFeed";
 
 const categories = [
   { id: "all", label: "All Posts", icon: Globe },
@@ -53,135 +11,79 @@ const categories = [
   { id: "text", label: "Discussions", icon: Server },
 ];
 
+const getTimeAgo = (dateString: string) => {
+  const now = new Date();
+  const date = new Date(dateString);
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return "just now";
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+  return `${Math.floor(diffInSeconds / 86400)}d ago`;
+};
+
 const Home = () => {
   const [activeCategory, setActiveCategory] = useState("all");
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [suggestedUsers, setSuggestedUsers] = useState<Profile[]>([]);
-  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
-  const navigate = useNavigate();
-
-  const loadPosts = useCallback(async () => {
-    setLoading(true);
-
-    try {
-      let query = supabase
-        .from('posts')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (activeCategory !== 'all') {
-        query = query.eq('post_type', activeCategory);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        setPosts([]);
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        setPosts([]);
-        return;
-      }
-
-      const userIds = [...new Set(data.map((post) => post.user_id).filter(Boolean))];
-      let profilesByUserId = new Map<string, Profile>();
-
-      if (userIds.length > 0) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, user_id, username, full_name, avatar_url, role, university, skills')
-          .in('user_id', userIds);
-
-        profilesByUserId = new Map((profilesData || []).map((profile) => [profile.user_id, profile as Profile]));
-      }
-
-      const postsWithProfiles = data.map((post) => ({
-        ...post,
-        tags: post.tags ?? [],
-        likes_count: post.likes_count ?? 0,
-        comments_count: post.comments_count ?? 0,
-        media_urls: post.media_urls ?? [],
-        is_anonymous: post.is_anonymous ?? false,
-        profiles: profilesByUserId.get(post.user_id) || null,
-      }));
-
-      setPosts(postsWithProfiles as Post[]);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeCategory]);
+  const { posts, loading, refreshPosts } = useFeed();
 
   useEffect(() => {
-    fetchPosts();
-    loadPosts();
-    fetchSuggestedUsers();
-    if (user) {
-      fetchFollowing();
-    }
-  }, [activeCategory, user]);
-  }, [loadPosts, user]);
+    refreshPosts(activeCategory);
+  }, [activeCategory, refreshPosts]);
 
-  const fetchPosts = async () => {
-    setLoading(true);
-    let query = supabase
-      .from('posts')
-      .select(`
-        *,
-        profiles!posts_user_id_fkey (
-          id, username, full_name, avatar_url, role, university, skills
-        )
-      `)
-      .order('created_at', { ascending: false })
-      .limit(20);
+  const filteredPosts = useMemo(
+    () => (activeCategory === "all" ? posts : posts.filter((post) => post.post_type === activeCategory)),
+    [activeCategory, posts],
+  );
 
-    if (activeCategory !== 'all') {
-      query = query.eq('post_type', activeCategory);
-    }
-  useEffect(() => {
-    const channel = supabase
-      .channel(`home-feed:${activeCategory}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async () => {
-        await loadPosts();
-      })
-      .subscribe();
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex gap-2 flex-wrap">
+        {categories.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            className={`px-4 py-2 rounded-lg border text-sm flex items-center gap-2 ${
+              activeCategory === id ? "bg-primary text-primary-foreground" : "bg-card"
+            }`}
+            onClick={() => setActiveCategory(id)}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
 
-    const { data, error } = await query;
-    if (!error && data) {
-      setPosts(data as unknown as Post[]);
-    }
-    setLoading(false);
-  };
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [activeCategory, loadPosts]);
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : filteredPosts.length === 0 ? (
+        <div className="text-center text-muted-foreground py-16">No posts found.</div>
+      ) : (
+        <div className="space-y-5">
+          {filteredPosts.map((post, index) => (
+            <motion.div key={post.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}>
+              <PostCard
+                id={post.id}
+                author={{
+                  name: post.is_anonymous ? "Anonymous" : post.profiles?.full_name || post.profiles?.username || "User",
+                  avatar: post.is_anonymous ? undefined : post.profiles?.avatar_url || undefined,
+                  field: post.profiles?.university || post.profiles?.role || "Member",
+                }}
+                timeAgo={getTimeAgo(post.created_at)}
+                title={post.title || "Untitled"}
+                content={post.content}
+                tags={post.tags || []}
+                code={post.code_content ? { content: post.code_content, language: post.code_language || "text" } : undefined}
+                likes={post.likes_count || 0}
+                comments={post.comments_count || 0}
+                isCodePost={post.post_type === "code"}
+              />
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
-  const fetchSuggestedUsers = async () => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .limit(5);
-    
-    if (data && data.length > 0) {
-      setSuggestedUsers(data as Profile[]);
-    }
-  };
-
-  const fetchFollowing = async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from('user_connections')
-      .select('following_id')
-      .eq('follower_id', user.id);
-    
-    if (data) {
-      setFollowingIds(new Set(data.map(c => c.following_id)));
-    }
-  };
-
-  const getTimeAgo = (dateString: string) => {
+export default Home;
