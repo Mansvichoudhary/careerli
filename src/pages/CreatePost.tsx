@@ -26,8 +26,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useFeed } from "@/hooks/useFeed";
 
 const languages = ["Python", "JavaScript", "TypeScript", "Rust", "Go", "Java", "C++"];
 
@@ -35,6 +35,7 @@ const CreatePost = () => {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
   const { toast } = useToast();
+  const { createPost } = useFeed();
   
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -74,27 +75,25 @@ const CreatePost = () => {
     setIsSubmitting(true);
 
     try {
-      const { data, error } = await supabase
-        .from('posts')
-        .insert({
-          title: title.trim(),
-          content: description.trim(),
-          post_type: postType,
-          code_content: code.trim() || null,
-          code_language: code.trim() ? language.toLowerCase() : null,
-          tags: tags,
-          is_anonymous: anonymous,
-          user_id: user.id,
-        })
-        .select()
-        .single();
+      const isCreated = await createPost({
+        title: title.trim(),
+        content: description.trim(),
+        post_type: postType,
+        code_content: code.trim() || undefined,
+        code_language: code.trim() ? language.toLowerCase() : undefined,
+        tags,
+        is_anonymous: anonymous,
+      });
 
-      if (error) throw error;
+      if (!isCreated) {
+        return;
+      }
 
       toast({ title: 'Post published!', description: 'Your post has been created successfully.' });
       navigate('/home');
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unexpected error';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
