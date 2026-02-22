@@ -1,10 +1,9 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
-import { Globe, Cpu, Brain, Server, Loader2, Sparkles, Flame, Users, Bot, ChevronRight } from "lucide-react";
+import { Globe, Cpu, Brain, Server, Loader2, Sparkles, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import PostCard from "@/components/PostCard";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useFeed } from "@/hooks/useFeed";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,19 +17,10 @@ const SuggestedConnections = lazy(() => import("@/components/widgets/SuggestedCo
 
 const categories = [
   { id: "all", label: "All Posts", icon: Globe },
-  { id: "code", label: "Code", icon: Cpu },
+  { id: "code", label: "Code Snippets", icon: Cpu },
   { id: "project", label: "Projects", icon: Brain },
   { id: "text", label: "Discussions", icon: Server },
 ];
-
-const smartModes = [
-  { id: "all", label: "All Posts", icon: Globe },
-  { id: "following", label: "Following", icon: Users },
-  { id: "trending", label: "Trending", icon: Flame },
-  { id: "ai", label: "AI Recommended", icon: Bot },
-] as const;
-
-type SmartMode = (typeof smartModes)[number]["id"];
 
 type DiscoverProfile = {
   id: string;
@@ -55,8 +45,6 @@ const getTimeAgo = (dateString: string) => {
 
 const Home = () => {
   const [activeCategory, setActiveCategory] = useState("all");
-  const [smartMode, setSmartMode] = useState<SmartMode>("all");
-  const [skillLevel, setSkillLevel] = useState("all");
   const [activeTag, setActiveTag] = useState("");
   const [users, setUsers] = useState<DiscoverProfile[]>([]);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
@@ -151,38 +139,10 @@ const Home = () => {
   const filteredPosts = useMemo(() => {
     const basePosts = activeCategory === "all" ? posts : posts.filter((post) => post.post_type === activeCategory);
 
-    const skillFiltered =
-      skillLevel === "all"
-        ? basePosts
-        : basePosts.filter((post) =>
-            (post.tags || []).some((tag) => tag.toLowerCase().includes(skillLevel.toLowerCase())),
-          );
-
-    const tagFiltered =
-      !activeTag
-        ? skillFiltered
-        : skillFiltered.filter((post) => (post.tags || []).some((tag) => tag.toLowerCase() === activeTag.toLowerCase()));
-
-    const modeFiltered =
-      smartMode === "following"
-        ? tagFiltered.filter((post) => followingIds.has(post.user_id))
-        : smartMode === "trending"
-          ? [...tagFiltered].sort((a, b) => (b.likes_count || 0) + (b.comments_count || 0) - ((a.likes_count || 0) + (a.comments_count || 0)))
-          : smartMode === "ai"
-            ? [...tagFiltered].sort((a, b) => {
-                const mySkills = new Set((profile?.skills || []).map((s) => s.toLowerCase()));
-                const score = (post: (typeof tagFiltered)[number]) => {
-                  const tagMatch = (post.tags || []).reduce((acc, tag) => (mySkills.has(tag.toLowerCase()) ? acc + 3 : acc), 0);
-                  const engagement = (post.likes_count || 0) + (post.comments_count || 0) * 2;
-                  const recencyWeight = Math.max(0, 7 - (Date.now() - new Date(post.created_at).getTime()) / (1000 * 60 * 60 * 24));
-                  return tagMatch + engagement + recencyWeight;
-                };
-                return score(b) - score(a);
-              })
-            : tagFiltered;
-
-    return modeFiltered;
-  }, [activeCategory, activeTag, followingIds, posts, profile?.skills, skillLevel, smartMode]);
+    return !activeTag
+      ? basePosts
+      : basePosts.filter((post) => (post.tags || []).some((tag) => tag.toLowerCase() === activeTag.toLowerCase()));
+  }, [activeCategory, activeTag, posts]);
 
   const unansweredPosts = useMemo(() => posts.filter((post) => (post.comments_count || 0) === 0).slice(0, 8), [posts]);
 
@@ -205,55 +165,26 @@ const Home = () => {
 
   return (
     <div className="mx-auto max-w-[1400px]">
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[240px_1fr_320px]">
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:h-fit">
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Workshop Feed</h2>
-            <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="min-w-0 space-y-5">
+          <div className="border-b border-border pb-4">
+            <div className="flex items-center gap-3 overflow-x-auto pb-1">
               {categories.map(({ id, label, icon: Icon }) => (
-                <button
+                <Button
                   key={id}
-                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                    activeCategory === id ? "bg-primary text-primary-foreground" : "hover:bg-primary/10"
+                  size="sm"
+                  variant="outline"
+                  className={`shrink-0 gap-2 rounded-full border transition-all hover:-translate-y-0.5 ${
+                    activeCategory === id
+                      ? "border-primary bg-primary/10 text-primary hover:bg-primary/15"
+                      : "border-border hover:border-primary/50 hover:bg-primary/5"
                   }`}
                   onClick={() => setActiveCategory(id)}
                 >
                   <Icon className="h-4 w-4" />
                   {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </aside>
-
-        <section className="min-w-0 space-y-5">
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              {smartModes.map(({ id, label, icon: Icon }) => (
-                <Button
-                  key={id}
-                  size="sm"
-                  variant={smartMode === id ? "default" : "outline"}
-                  className="gap-2 transition-all hover:-translate-y-0.5"
-                  onClick={() => setSmartMode(id)}
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
                 </Button>
               ))}
-              <div className="ml-auto min-w-[170px]">
-                <Select value={skillLevel} onValueChange={setSkillLevel}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Skill level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All levels</SelectItem>
-                    <SelectItem value="beginner">Beginner</SelectItem>
-                    <SelectItem value="intermediate">Intermediate</SelectItem>
-                    <SelectItem value="advanced">Advanced</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
           </div>
 
