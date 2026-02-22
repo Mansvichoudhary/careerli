@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Filter, TrendingUp, Globe, Cpu, Brain, Server, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { demoPosts, demoUsers, demoEvents, trendingTech } from "@/lib/seedData";
 
 interface Profile {
   id: string;
+  user_id: string;
   username: string | null;
   full_name: string | null;
   avatar_url: string | null;
@@ -54,24 +55,11 @@ const Home = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchPosts();
-    fetchSuggestedUsers();
-    if (user) {
-      fetchFollowing();
-    }
-  }, [activeCategory, user]);
-
-  const fetchPosts = async () => {
+  const loadPosts = useCallback(async () => {
     setLoading(true);
     let query = supabase
       .from('posts')
-      .select(`
-        *,
-        profiles!posts_user_id_fkey (
-          id, username, full_name, avatar_url, role, university, skills
-        )
-      `)
+      .select('*')
       .order('created_at', { ascending: false })
       .limit(20);
 
@@ -80,11 +68,46 @@ const Home = () => {
     }
 
     const { data, error } = await query;
+
     if (!error && data) {
-      setPosts(data as unknown as Post[]);
+      const userIds = [...new Set(data.map((post) => post.user_id))];
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, user_id, username, full_name, avatar_url, role, university, skills')
+        .in('user_id', userIds);
+
+      const profilesByUserId = new Map((profilesData || []).map((profile) => [profile.user_id, profile]));
+
+      const postsWithProfiles = data.map((post) => ({
+        ...post,
+        profiles: profilesByUserId.get(post.user_id) || null,
+      }));
+
+      setPosts(postsWithProfiles as Post[]);
     }
     setLoading(false);
-  };
+  }, [activeCategory]);
+
+  useEffect(() => {
+    loadPosts();
+    fetchSuggestedUsers();
+    if (user) {
+      fetchFollowing();
+    }
+  }, [loadPosts, user]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`home-feed:${activeCategory}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async () => {
+        await loadPosts();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeCategory, loadPosts]);
 
   const fetchSuggestedUsers = async () => {
     const { data } = await supabase
