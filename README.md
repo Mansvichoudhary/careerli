@@ -71,3 +71,20 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Judge0 setup for running code snippets
+
+The `Run Code` button in snippet cards uses Judge0.
+
+Optional environment variables:
+
+```sh
+# direct Judge0 CE endpoint (default already used in code)
+VITE_JUDGE0_BASE_URL="https://ce.judge0.com"
+
+# only needed when using Judge0 via RapidAPI
+VITE_JUDGE0_RAPIDAPI_KEY="<your-rapidapi-key>"
+VITE_JUDGE0_RAPIDAPI_HOST="judge0-ce.p.rapidapi.com"
+```
+
+If your provider requires API headers and these values are missing, running code will show an explanatory error in the snippet output panel.

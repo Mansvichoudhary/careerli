@@ -12,10 +12,27 @@ interface CodeBlockProps {
   onRun?: () => void;
 }
 
-const JUDGE0_BASE_URL = "https://ce.judge0.com";
+const JUDGE0_BASE_URL = import.meta.env.VITE_JUDGE0_BASE_URL || "https://ce.judge0.com";
+const JUDGE0_RAPIDAPI_KEY = import.meta.env.VITE_JUDGE0_RAPIDAPI_KEY;
+const JUDGE0_RAPIDAPI_HOST = import.meta.env.VITE_JUDGE0_RAPIDAPI_HOST;
 
 const POLL_INTERVAL_MS = 1200;
 const MAX_POLL_ATTEMPTS = 12;
+const IN_QUEUE_STATUS_ID = 1;
+const PROCESSING_STATUS_ID = 2;
+
+const buildJudge0Headers = (): Record<string, string> => {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (JUDGE0_RAPIDAPI_KEY && JUDGE0_RAPIDAPI_HOST) {
+    headers["X-RapidAPI-Key"] = JUDGE0_RAPIDAPI_KEY;
+    headers["X-RapidAPI-Host"] = JUDGE0_RAPIDAPI_HOST;
+  }
+
+  return headers;
+};
 
 const CodeBlock = ({
   code,
@@ -87,6 +104,18 @@ const CodeBlock = ({
     return `${parts.length ? parts.join("\n\n") : "No output."}${metrics}`;
   };
 
+  const parseJudge0ErrorMessage = async (response: Response): Promise<string> => {
+    const fallback = `Request failed (${response.status}).`;
+
+    try {
+      const data = (await response.json()) as { message?: string; error?: string };
+      return data.message || data.error || fallback;
+    } catch {
+      const text = await response.text();
+      return text || fallback;
+    }
+  };
+
   const handleRun = async () => {
     const languageId = getJudge0LanguageId(language);
 
@@ -103,9 +132,7 @@ const CodeBlock = ({
     try {
       const submissionResponse = await fetch(`${JUDGE0_BASE_URL}/submissions?base64_encoded=false&wait=false`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: buildJudge0Headers(),
         body: JSON.stringify({
           source_code: code,
           language_id: languageId,
@@ -113,7 +140,10 @@ const CodeBlock = ({
       });
 
       if (!submissionResponse.ok) {
-        throw new Error(`Submission failed (${submissionResponse.status}).`);
+        const apiError = await parseJudge0ErrorMessage(submissionResponse);
+        throw new Error(
+          `Submission failed: ${apiError}. If you use RapidAPI Judge0, set VITE_JUDGE0_RAPIDAPI_KEY and VITE_JUDGE0_RAPIDAPI_HOST.`,
+        );
       }
 
       const submissionData: { token?: string } = await submissionResponse.json();
@@ -129,10 +159,12 @@ const CodeBlock = ({
 
         const resultResponse = await fetch(
           `${JUDGE0_BASE_URL}/submissions/${submissionData.token}?base64_encoded=false`,
+          { headers: buildJudge0Headers() },
         );
 
         if (!resultResponse.ok) {
-          throw new Error(`Failed to fetch result (${resultResponse.status}).`);
+          const apiError = await parseJudge0ErrorMessage(resultResponse);
+          throw new Error(`Failed to fetch result: ${apiError}`);
         }
 
         const resultData: {
@@ -147,7 +179,7 @@ const CodeBlock = ({
 
         const statusId = resultData.status?.id;
 
-        if (statusId !== 1 && statusId !== 2) {
+        if (statusId !== IN_QUEUE_STATUS_ID && statusId !== PROCESSING_STATUS_ID) {
           setOutput(formatExecutionOutput(resultData));
           onRun?.();
           return;
