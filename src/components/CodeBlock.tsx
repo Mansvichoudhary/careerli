@@ -12,6 +12,11 @@ interface CodeBlockProps {
   onRun?: () => void;
 }
 
+const JUDGE0_BASE_URL = "https://ce.judge0.com";
+
+const POLL_INTERVAL_MS = 1200;
+const MAX_POLL_ATTEMPTS = 12;
+
 const CodeBlock = ({
   code,
   language = "python",
@@ -21,6 +26,7 @@ const CodeBlock = ({
 }: CodeBlockProps) => {
   const [copied, setCopied] = useState(false);
   const [output, setOutput] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(code);
@@ -28,12 +34,135 @@ const CodeBlock = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleRun = () => {
-    setOutput("Running code...");
-    setTimeout(() => {
-      setOutput("Output: Code executed successfully!");
-      onRun?.();
-    }, 1000);
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const getJudge0LanguageId = (lang: string): number | null => {
+    const languageIds: Record<string, number> = {
+      python: 71,
+      javascript: 63,
+      typescript: 74,
+      java: 62,
+      c: 50,
+      cpp: 54,
+      "c++": 54,
+      rust: 73,
+      go: 60,
+      bash: 46,
+      ruby: 72,
+    };
+
+    return languageIds[getLanguage(lang)] ?? null;
+  };
+
+  const formatExecutionOutput = (result: {
+    stdout?: string | null;
+    stderr?: string | null;
+    compile_output?: string | null;
+    message?: string | null;
+    status?: { description?: string | null };
+    time?: string | null;
+    memory?: number | null;
+  }): string => {
+    const parts: string[] = [];
+
+    if (result.stdout) {
+      parts.push(result.stdout.trimEnd());
+    }
+
+    if (result.stderr) {
+      parts.push(`Error:\n${result.stderr.trimEnd()}`);
+    }
+
+    if (result.compile_output) {
+      parts.push(`Compiler Output:\n${result.compile_output.trimEnd()}`);
+    }
+
+    if (result.message) {
+      parts.push(`Message:\n${result.message.trimEnd()}`);
+    }
+
+    const status = result.status?.description || "Unknown";
+    const metrics = `\n\nStatus: ${status}${result.time ? ` | Time: ${result.time}s` : ""}${result.memory ? ` | Memory: ${result.memory} KB` : ""}`;
+
+    return `${parts.length ? parts.join("\n\n") : "No output."}${metrics}`;
+  };
+
+  const handleRun = async () => {
+    const languageId = getJudge0LanguageId(language);
+
+    if (!languageId) {
+      setOutput(
+        `This language (${language}) is not currently supported for Judge0 execution in this app.`,
+      );
+      return;
+    }
+
+    setIsRunning(true);
+    setOutput("Running code on Judge0...");
+
+    try {
+      const submissionResponse = await fetch(`${JUDGE0_BASE_URL}/submissions?base64_encoded=false&wait=false`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          source_code: code,
+          language_id: languageId,
+        }),
+      });
+
+      if (!submissionResponse.ok) {
+        throw new Error(`Submission failed (${submissionResponse.status}).`);
+      }
+
+      const submissionData: { token?: string } = await submissionResponse.json();
+
+      if (!submissionData.token) {
+        throw new Error("Judge0 token was not returned.");
+      }
+
+      let attempts = 0;
+
+      while (attempts < MAX_POLL_ATTEMPTS) {
+        attempts += 1;
+
+        const resultResponse = await fetch(
+          `${JUDGE0_BASE_URL}/submissions/${submissionData.token}?base64_encoded=false`,
+        );
+
+        if (!resultResponse.ok) {
+          throw new Error(`Failed to fetch result (${resultResponse.status}).`);
+        }
+
+        const resultData: {
+          status?: { id?: number; description?: string | null };
+          stdout?: string | null;
+          stderr?: string | null;
+          compile_output?: string | null;
+          message?: string | null;
+          time?: string | null;
+          memory?: number | null;
+        } = await resultResponse.json();
+
+        const statusId = resultData.status?.id;
+
+        if (statusId !== 1 && statusId !== 2) {
+          setOutput(formatExecutionOutput(resultData));
+          onRun?.();
+          return;
+        }
+
+        await sleep(POLL_INTERVAL_MS);
+      }
+
+      setOutput("Execution timed out while waiting for Judge0 response.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown execution error.";
+      setOutput(`Execution failed: ${message}`);
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   // Map common language aliases
@@ -45,6 +174,8 @@ const CodeBlock = ({
       rb: "ruby",
       sh: "bash",
       yml: "yaml",
+      "c#": "csharp",
+      "c++": "cpp",
     };
     return languageMap[lang.toLowerCase()] || lang.toLowerCase();
   };
@@ -108,10 +239,11 @@ const CodeBlock = ({
           <Button
             size="sm"
             onClick={handleRun}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            disabled={isRunning}
+            className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-60"
           >
             <Play className="h-4 w-4 mr-1" />
-            Run Code
+            {isRunning ? "Running..." : "Run Code"}
           </Button>
         </div>
       )}
@@ -123,7 +255,7 @@ const CodeBlock = ({
             <Terminal className="h-4 w-4" />
             <span>Output</span>
           </div>
-          <pre className="text-sm font-mono text-gray-300">{output}</pre>
+          <pre className="text-sm font-mono text-gray-300 whitespace-pre-wrap">{output}</pre>
         </div>
       )}
     </div>
