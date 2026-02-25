@@ -95,19 +95,8 @@ const PostCard = ({ id, author, timeAgo, title, content, tags, image, code, like
   };
 
   const fetchReviews = async () => {
-    if (!id) return;
-    const { data } = await supabase.from("code_reviews").select("id, reviewed_code, message, created_at, reviewer_id").eq("post_id", id).order("created_at", { ascending: true });
-    const reviewsData = data ?? [];
-
-    const reviewerIds = [...new Set(reviewsData.map((review) => review.reviewer_id))];
-    let profileMap = new Map<string, { full_name: string | null; avatar_url: string | null }>();
-
-    if (reviewerIds.length > 0) {
-      const { data: profiles } = await supabase.from("profiles").select("user_id, full_name, avatar_url").in("user_id", reviewerIds);
-      profileMap = new Map((profiles ?? []).map((profile) => [profile.user_id, { full_name: profile.full_name, avatar_url: profile.avatar_url }]));
-    }
-
-    setReviews(reviewsData.map((review) => ({ ...review, profiles: profileMap.get(review.reviewer_id) || null })) as Review[]);
+    // code_reviews table removed — no-op
+    setReviews([]);
   };
 
   useEffect(() => {
@@ -127,9 +116,6 @@ const PostCard = ({ id, author, timeAgo, title, content, tags, image, code, like
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "comments", filter: `post_id=eq.${id}` }, () => {
         fetchComments();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "code_reviews", filter: `post_id=eq.${id}` }, () => {
-        fetchReviews();
       })
       .subscribe();
 
@@ -168,19 +154,7 @@ const PostCard = ({ id, author, timeAgo, title, content, tags, image, code, like
 
   const handleAddReview = async () => {
     if (!user || !id || !reviewCode.trim()) return;
-
-    const { error } = await supabase.from("code_reviews").insert({
-      post_id: id,
-      reviewer_id: user.id,
-      reviewed_code: reviewCode.trim(),
-      message: reviewMessage.trim() || null,
-    });
-
-    if (error) {
-      toast({ title: "Review failed", description: error.message, variant: "destructive" });
-      return;
-    }
-
+    toast({ title: "Coming soon", description: "Code reviews feature is being rebuilt." });
     setReviewCode("");
     setReviewMessage("");
     setIsReviewsOpen(false);
