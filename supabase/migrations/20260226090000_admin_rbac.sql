@@ -24,7 +24,7 @@ ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
 
-DO $$
+DO $admin_promotion$
 BEGIN
   IF EXISTS (
     SELECT 1
@@ -33,11 +33,11 @@ BEGIN
       AND table_name = 'profiles'
       AND column_name = 'email'
   ) THEN
-    EXECUTE $$
+    EXECUTE $update_profiles$
       UPDATE public.profiles
       SET role = 'admin'
       WHERE email = 'REPLACE_WITH_ADMIN_EMAIL@gmail.com'
-    $$;
+    $update_profiles$;
   ELSE
     UPDATE public.profiles p
     SET role = 'admin'
@@ -45,7 +45,8 @@ BEGIN
     WHERE p.user_id = u.id
       AND u.email = 'REPLACE_WITH_ADMIN_EMAIL@gmail.com';
   END IF;
-END $$;
+END
+$admin_promotion$;
 
 CREATE POLICY "Admin can update any post"
 ON public.posts
