@@ -9,7 +9,7 @@ interface Profile {
   username: string | null;
   full_name: string | null;
   avatar_url: string | null;
-  role: "student" | "mentor";
+  role: "student" | "mentor" | "admin";
   university: string | null;
   skills: string[] | null;
 }
@@ -25,6 +25,7 @@ export interface FeedPost {
   likes_count: number | null;
   comments_count: number | null;
   created_at: string;
+  is_pinned: boolean | null;
   is_anonymous: boolean | null;
   user_id: string;
   profiles: Profile | null;
@@ -43,6 +44,9 @@ interface FeedContextValue {
     tags: string[];
     is_anonymous: boolean;
   }) => Promise<boolean>;
+  updatePost: (postId: string, payload: { title?: string; content?: string }) => Promise<boolean>;
+  deletePost: (postId: string) => Promise<boolean>;
+  togglePin: (postId: string, isPinned: boolean) => Promise<boolean>;
 }
 
 const FeedContext = createContext<FeedContextValue | null>(null);
@@ -56,7 +60,11 @@ export const FeedProvider = ({ children }: { children: ReactNode }) => {
   const refreshPosts = useCallback(async (category?: string) => {
     setLoading(true);
 
-    let query = supabase.from("posts").select("*").order("created_at", { ascending: false });
+    let query = supabase
+      .from("posts")
+      .select("*")
+      .order("is_pinned", { ascending: false })
+      .order("created_at", { ascending: false });
 
     if (category && category !== "all") {
       query = query.eq("post_type", category);
@@ -149,8 +157,46 @@ export const FeedProvider = ({ children }: { children: ReactNode }) => {
     return true;
   }, [refreshPosts, toast, user]);
 
-  const value = useMemo(() => ({ posts, loading, refreshPosts, createPost }), [posts, loading, refreshPosts, createPost]);
+  const updatePost = useCallback(async (postId: string, payload: { title?: string; content?: string }) => {
+    const { error } = await supabase.from("posts").update(payload).eq("id", postId);
 
+    if (error) {
+      toast({ title: "Unable to update post", description: error.message, variant: "destructive" });
+      return false;
+    }
+
+    await refreshPosts();
+    return true;
+  }, [refreshPosts, toast]);
+
+  const deletePost = useCallback(async (postId: string) => {
+    const { error } = await supabase.from("posts").delete().eq("id", postId);
+
+    if (error) {
+      toast({ title: "Unable to delete post", description: error.message, variant: "destructive" });
+      return false;
+    }
+
+    await refreshPosts();
+    return true;
+  }, [refreshPosts, toast]);
+
+  const togglePin = useCallback(async (postId: string, isPinned: boolean) => {
+    const { error } = await supabase.from("posts").update({ is_pinned: !isPinned }).eq("id", postId);
+
+    if (error) {
+      toast({ title: "Unable to toggle pin", description: error.message, variant: "destructive" });
+      return false;
+    }
+
+    await refreshPosts();
+    return true;
+  }, [refreshPosts, toast]);
+
+  const value = useMemo(
+    () => ({ posts, loading, refreshPosts, createPost, updatePost, deletePost, togglePin }),
+    [posts, loading, refreshPosts, createPost, updatePost, deletePost, togglePin],
+  );
   return <FeedContext.Provider value={value}>{children}</FeedContext.Provider>;
 };
 

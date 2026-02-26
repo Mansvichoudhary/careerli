@@ -19,6 +19,7 @@ import Settings from "./pages/Settings";
 import CreatePost from "./pages/CreatePost";
 import Chat from "./pages/Chat";
 import Problems from "./pages/Problems";
+import Admin from "./pages/Admin";
 import MainLayout from "./components/layout/MainLayout";
 import NotFound from "./pages/NotFound";
 
@@ -55,6 +56,7 @@ const App = () => (
               <Route path="/chat" element={<Chat />} />
               <Route path="/groups" element={<Chat />} />
               <Route path="/problems" element={<Problems />} />
+              <Route path="/admin" element={<Admin />} />
             </Route>
             
             {/* Create Post - Full Screen */}

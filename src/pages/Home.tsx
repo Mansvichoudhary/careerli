@@ -307,6 +307,7 @@ const Home = () => {
                     likes={post.likes_count || 0}
                     comments={post.comments_count || 0}
                     isCodePost={post.post_type === "code"}
+                    isPinned={post.is_pinned ?? false}
                   />
                 </motion.div>
               ))}

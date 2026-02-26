@@ -12,6 +12,7 @@ import {
   Code2,
   LogOut,
   Lightbulb,
+  Shield,
 } from "lucide-react";
 import Logo from "@/components/Logo";
 import UserAvatar from "@/components/Avatar";
@@ -45,7 +46,7 @@ const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const currentPath = location.pathname;
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, isAdmin } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -58,6 +59,7 @@ const Sidebar = () => {
     { to: "/snippets", icon: <Code2 className="h-5 w-5" />, label: "Code Snippets" },
     { to: "/connections", icon: <Users className="h-5 w-5" />, label: "Connections" },
     { to: "/problems", icon: <Lightbulb className="h-5 w-5" />, label: "Ask the Workshop" },
+    ...(isAdmin ? [{ to: "/admin", icon: <Shield className="h-5 w-5" />, label: "Admin" }] : []),
     { to: "/events", icon: <Folder className="h-5 w-5" />, label: "Events" },
     { to: "/notifications", icon: <Bookmark className="h-5 w-5" />, label: "Notifications" },
   ];
