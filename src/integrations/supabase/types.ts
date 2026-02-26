@@ -303,7 +303,6 @@ export type Database = {
           created_at: string
           id: string
           is_anonymous: boolean | null
-          is_pinned: boolean | null
           likes_count: number | null
           media_urls: string[] | null
           post_type: string
@@ -321,7 +320,6 @@ export type Database = {
           created_at?: string
           id?: string
           is_anonymous?: boolean | null
-          is_pinned?: boolean | null
           likes_count?: number | null
           media_urls?: string[] | null
           post_type?: string
@@ -339,7 +337,6 @@ export type Database = {
           created_at?: string
           id?: string
           is_anonymous?: boolean | null
-          is_pinned?: boolean | null
           likes_count?: number | null
           media_urls?: string[] | null
           post_type?: string
@@ -497,7 +494,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      user_role: "student" | "mentor" | "admin"
+      user_role: "student" | "mentor"
     }
     CompositeTypes: {
       [_ in never]: never
