@@ -21,7 +21,7 @@ interface AdminProfile {
   user_id: string;
   full_name: string | null;
   username: string | null;
-  role: "student" | "mentor" | "admin";
+  role: string;
 }
 
 const Admin = () => {
@@ -60,8 +60,8 @@ const Admin = () => {
     }
   }, [isAdmin]);
 
-  const handleRoleChange = async (userId: string, role: AdminProfile["role"]) => {
-    const { error } = await supabase.from("profiles").update({ role }).eq("user_id", userId);
+  const handleRoleChange = async (userId: string, role: string) => {
+    const { error } = await supabase.from("profiles").update({ role: role as any }).eq("user_id", userId);
     if (error) {
       toast({ title: "Unable to update role", description: error.message, variant: "destructive" });
       return;
