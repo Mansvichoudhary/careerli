@@ -16,7 +16,7 @@ interface Profile {
   full_name: string | null;
   avatar_url: string | null;
   bio: string | null;
-  role: 'student' | 'mentor';
+  role: string;
   university: string | null;
   skills: string[];
 }

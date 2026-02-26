@@ -2,7 +2,7 @@ import { GraduationCap, Award } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface RoleBadgeProps {
-  role: 'student' | 'mentor';
+  role: string;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
