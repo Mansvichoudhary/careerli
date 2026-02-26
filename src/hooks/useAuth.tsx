@@ -9,7 +9,7 @@ interface Profile {
   full_name: string | null;
   avatar_url: string | null;
   bio: string | null;
-  role: 'student' | 'mentor';
+  role: 'student' | 'mentor' | 'admin';
   location: string | null;
   university: string | null;
   github_url: string | null;
@@ -24,6 +24,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
+  isAdmin: boolean;
   loading: boolean;
   signUp: (email: string, password: string, metadata: { full_name: string; role: 'student' | 'mentor' }) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -131,11 +132,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const isAdmin = profile?.role === 'admin';
+
   return (
     <AuthContext.Provider value={{
       user,
       session,
       profile,
+      isAdmin,
       loading,
       signUp,
       signIn,

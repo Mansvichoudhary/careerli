@@ -11,6 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { useFeed } from "@/hooks/useFeed";
 
 interface PostCardProps {
   id?: string;
@@ -24,6 +26,7 @@ interface PostCardProps {
   likes: number;
   comments: number;
   isCodePost?: boolean;
+  isPinned?: boolean;
 }
 
 interface Comment {
@@ -41,7 +44,7 @@ interface Review {
   profiles: { full_name: string | null; avatar_url: string | null } | null;
 }
 
-const PostCard = ({ id, author, timeAgo, title, content, tags, image, code, likes, comments: initialComments, isCodePost = false }: PostCardProps) => {
+const PostCard = ({ id, author, timeAgo, title, content, tags, image, code, likes, comments: initialComments, isCodePost = false, isPinned = false }: PostCardProps) => {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(likes);
   const [commentCount, setCommentCount] = useState(initialComments);
@@ -52,7 +55,11 @@ const PostCard = ({ id, author, timeAgo, title, content, tags, image, code, like
   const [reviewMessage, setReviewMessage] = useState("");
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [isReviewsOpen, setIsReviewsOpen] = useState(false);
-  const { user } = useAuth();
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState(title);
+  const [editContent, setEditContent] = useState(content);
+  const { user, isAdmin } = useAuth();
+  const { updatePost, deletePost, togglePin } = useFeed();
   const { toast } = useToast();
 
   const getTimeAgo = (dateString: string) => {
@@ -104,6 +111,11 @@ const PostCard = ({ id, author, timeAgo, title, content, tags, image, code, like
     fetchLikeCount();
     fetchReviews();
   }, [id, user]);
+
+  useEffect(() => {
+    setEditTitle(title);
+    setEditContent(content);
+  }, [title, content]);
 
   useEffect(() => {
     if (!id) return;
@@ -164,6 +176,29 @@ const PostCard = ({ id, author, timeAgo, title, content, tags, image, code, like
     const shareUrl = window.location.origin + (id ? `/post/${id}` : "/home");
     await navigator.clipboard.writeText(shareUrl);
     toast({ title: "Link copied", description: "Post link copied to clipboard" });
+  };
+
+  const handleAdminDelete = async () => {
+    if (!id) return;
+    await deletePost(id);
+  };
+
+  const handleAdminTogglePin = async () => {
+    if (!id) return;
+    await togglePin(id, isPinned);
+  };
+
+  const handleAdminEdit = async () => {
+    if (!id) return;
+
+    const updated = await updatePost(id, {
+      title: editTitle.trim() || "Untitled",
+      content: editContent.trim(),
+    });
+
+    if (updated) {
+      setIsEditOpen(false);
+    }
   };
 
   return (
@@ -243,19 +278,40 @@ const PostCard = ({ id, author, timeAgo, title, content, tags, image, code, like
           <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={handleShare}><Share2 className="h-4 w-4" /></Button>
         </div>
 
-        <Dialog open={isReviewsOpen} onOpenChange={setIsReviewsOpen}>
-          <DialogTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-2 text-primary hover:text-primary hover:bg-primary-soft">
-              {isCodePost ? <><Code2 className="h-4 w-4" /><span>Review Code</span></> : <><Users className="h-4 w-4" /><span>Collaborate</span></>}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader><DialogTitle>Submit code review</DialogTitle></DialogHeader>
-            <Textarea value={reviewMessage} onChange={(e) => setReviewMessage(e.target.value)} placeholder="Feedback message" />
-            <Textarea value={reviewCode} onChange={(e) => setReviewCode(e.target.value)} placeholder="Paste improved code" className="min-h-[220px] font-mono" />
-            <Button onClick={handleAddReview} disabled={!reviewCode.trim()}>Submit Review</Button>
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <>
+              <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">Edit</Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-xl">
+                  <DialogHeader><DialogTitle>Edit Post</DialogTitle></DialogHeader>
+                  <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Post title" />
+                  <Textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} placeholder="Post content" className="min-h-[160px]" />
+                  <Button onClick={handleAdminEdit} disabled={!editContent.trim()}>Save</Button>
+                </DialogContent>
+              </Dialog>
+
+              <Button variant="destructive" size="sm" onClick={handleAdminDelete}>Delete</Button>
+              <Button variant="secondary" size="sm" onClick={handleAdminTogglePin}>{isPinned ? "Unpin" : "Pin"}</Button>
+            </>
+          )}
+
+          <Dialog open={isReviewsOpen} onOpenChange={setIsReviewsOpen}>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-2 text-primary hover:text-primary hover:bg-primary-soft">
+                {isCodePost ? <><Code2 className="h-4 w-4" /><span>Review Code</span></> : <><Users className="h-4 w-4" /><span>Collaborate</span></>}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader><DialogTitle>Submit code review</DialogTitle></DialogHeader>
+              <Textarea value={reviewMessage} onChange={(e) => setReviewMessage(e.target.value)} placeholder="Feedback message" />
+              <Textarea value={reviewCode} onChange={(e) => setReviewCode(e.target.value)} placeholder="Paste improved code" className="min-h-[220px] font-mono" />
+              <Button onClick={handleAddReview} disabled={!reviewCode.trim()}>Submit Review</Button>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
     </motion.div>
   );
