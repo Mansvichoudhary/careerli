@@ -1,49 +1,16 @@
-import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
+import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/api';
 
-interface Profile {
-  id: string;
-  user_id: string;
-  username: string | null;
-  full_name: string | null;
-  avatar_url: string | null;
-  role: "student" | "mentor" | "admin";
-  university: string | null;
-  skills: string[] | null;
-}
-
-export interface FeedPost {
-  id: string;
-  title: string | null;
-  content: string;
-  post_type: string;
-  code_content: string | null;
-  code_language: string | null;
-  tags: string[] | null;
-  likes_count: number | null;
-  comments_count: number | null;
-  created_at: string;
-  is_pinned: boolean | null;
-  is_anonymous: boolean | null;
-  user_id: string;
-  profiles: Profile | null;
-}
+interface Profile { id: string; user_id: string; username: string | null; full_name: string | null; avatar_url: string | null; role: 'student' | 'mentor' | 'admin'; university: string | null; skills: string[] | null; }
+export interface FeedPost { id: string; title: string | null; content: string; post_type: string; tags: string[] | null; created_at: string; is_pinned: boolean | null; user_id: string; profiles: Profile | null; }
 
 interface FeedContextValue {
   posts: FeedPost[];
   loading: boolean;
   refreshPosts: (category?: string) => Promise<void>;
-  createPost: (payload: {
-    title: string;
-    content: string;
-    post_type: string;
-    code_content?: string;
-    code_language?: string;
-    tags: string[];
-    is_anonymous: boolean;
-  }) => Promise<boolean>;
+  createPost: (payload: { title: string; content: string; post_type: string; code_content?: string; code_language?: string; tags: string[]; is_anonymous: boolean }) => Promise<boolean>;
   updatePost: (postId: string, payload: { title?: string; content?: string }) => Promise<boolean>;
   deletePost: (postId: string) => Promise<boolean>;
   togglePin: (postId: string, isPinned: boolean) => Promise<boolean>;
@@ -59,149 +26,40 @@ export const FeedProvider = ({ children }: { children: ReactNode }) => {
 
   const refreshPosts = useCallback(async (category?: string) => {
     setLoading(true);
-
-    let query = supabase
-      .from("posts")
-      .select("*")
-      .order("is_pinned", { ascending: false })
-      .order("created_at", { ascending: false });
-
-    if (category && category !== "all") {
-      query = query.eq("post_type", category);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      toast({ title: "Could not load feed", description: error.message, variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-
-    const postsData = data ?? [];
-    const userIds = [...new Set(postsData.map((post) => post.user_id))];
-    let profilesByUserId = new Map<string, Profile>();
-
-    if (userIds.length > 0) {
-      const { data: profilesData } = await supabase
-        .from("profiles")
-        .select("id, user_id, username, full_name, avatar_url, role, university, skills")
-        .in("user_id", userIds);
-
-      profilesByUserId = new Map((profilesData ?? []).map((profile) => [profile.user_id, profile as Profile]));
-    }
-
-    setPosts(
-      postsData.map((post) => ({
-        ...post,
-        profiles: profilesByUserId.get(post.user_id) || null,
-      })) as FeedPost[],
-    );
-
-    setLoading(false);
+    try {
+      const suffix = category && category !== 'all' ? `?category=${encodeURIComponent(category)}` : '';
+      const data = await apiRequest<FeedPost[]>(`/posts${suffix}`);
+      setPosts(data ?? []);
+    } catch (error) {
+      toast({ title: 'Could not load feed', description: (error as Error).message, variant: 'destructive' });
+    } finally { setLoading(false); }
   }, [toast]);
 
-  useEffect(() => {
-    refreshPosts();
+  useEffect(() => { refreshPosts(); }, [refreshPosts]);
 
-    const postsChannel = supabase
-      .channel("feed-posts")
-      .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, () => refreshPosts())
-      .subscribe();
-
-    const likesChannel = supabase
-      .channel("feed-likes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "post_likes" }, () => refreshPosts())
-      .subscribe();
-
-    const commentsChannel = supabase
-      .channel("feed-comments")
-      .on("postgres_changes", { event: "*", schema: "public", table: "comments" }, () => refreshPosts())
-      .subscribe();
-
-    const reviewsChannel = supabase
-      .channel("feed-reviews")
-      .on("postgres_changes", { event: "*", schema: "public", table: "code_reviews" }, () => refreshPosts())
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(postsChannel);
-      supabase.removeChannel(likesChannel);
-      supabase.removeChannel(commentsChannel);
-      supabase.removeChannel(reviewsChannel);
-    };
-  }, [refreshPosts]);
-
-  const createPost = useCallback(async (payload: {
-    title: string;
-    content: string;
-    post_type: string;
-    code_content?: string;
-    code_language?: string;
-    tags: string[];
-    is_anonymous: boolean;
-  }) => {
-    if (!user) {
-      toast({ title: "Please log in", description: "You must be logged in to create a post", variant: "destructive" });
-      return false;
-    }
-
-    const { error } = await supabase.from("posts").insert({ ...payload, user_id: user.id });
-
-    if (error) {
-      toast({ title: "Error creating post", description: error.message, variant: "destructive" });
-      return false;
-    }
-
-    await refreshPosts();
-    return true;
+  const createPost = useCallback(async (payload: { title: string; content: string; post_type: string; code_content?: string; code_language?: string; tags: string[]; is_anonymous: boolean }) => {
+    if (!user) return false;
+    try { await apiRequest('/posts', 'POST', payload); await refreshPosts(); return true; } catch (error) { toast({ title: 'Error creating post', description: (error as Error).message, variant: 'destructive' }); return false; }
   }, [refreshPosts, toast, user]);
 
   const updatePost = useCallback(async (postId: string, payload: { title?: string; content?: string }) => {
-    const { error } = await supabase.from("posts").update(payload).eq("id", postId);
-
-    if (error) {
-      toast({ title: "Unable to update post", description: error.message, variant: "destructive" });
-      return false;
-    }
-
-    await refreshPosts();
-    return true;
+    try { await apiRequest(`/posts/${postId}`, 'PUT', payload); await refreshPosts(); return true; } catch (error) { toast({ title: 'Unable to update post', description: (error as Error).message, variant: 'destructive' }); return false; }
   }, [refreshPosts, toast]);
 
   const deletePost = useCallback(async (postId: string) => {
-    const { error } = await supabase.from("posts").delete().eq("id", postId);
-
-    if (error) {
-      toast({ title: "Unable to delete post", description: error.message, variant: "destructive" });
-      return false;
-    }
-
-    await refreshPosts();
-    return true;
+    try { await apiRequest(`/posts/${postId}`, 'DELETE'); await refreshPosts(); return true; } catch (error) { toast({ title: 'Unable to delete post', description: (error as Error).message, variant: 'destructive' }); return false; }
   }, [refreshPosts, toast]);
 
   const togglePin = useCallback(async (postId: string, isPinned: boolean) => {
-    const { error } = await supabase.from("posts").update({ is_pinned: !isPinned }).eq("id", postId);
-
-    if (error) {
-      toast({ title: "Unable to toggle pin", description: error.message, variant: "destructive" });
-      return false;
-    }
-
-    await refreshPosts();
-    return true;
+    try { await apiRequest(`/posts/${postId}`, 'PUT', { is_pinned: !isPinned }); await refreshPosts(); return true; } catch (error) { toast({ title: 'Unable to toggle pin', description: (error as Error).message, variant: 'destructive' }); return false; }
   }, [refreshPosts, toast]);
 
-  const value = useMemo(
-    () => ({ posts, loading, refreshPosts, createPost, updatePost, deletePost, togglePin }),
-    [posts, loading, refreshPosts, createPost, updatePost, deletePost, togglePin],
-  );
+  const value = useMemo(() => ({ posts, loading, refreshPosts, createPost, updatePost, deletePost, togglePin }), [posts, loading, refreshPosts, createPost, updatePost, deletePost, togglePin]);
   return <FeedContext.Provider value={value}>{children}</FeedContext.Provider>;
 };
 
 export const useFeed = () => {
   const context = useContext(FeedContext);
-  if (!context) throw new Error("useFeed must be used inside FeedProvider");
+  if (!context) throw new Error('useFeed must be used inside FeedProvider');
   return context;
 };
